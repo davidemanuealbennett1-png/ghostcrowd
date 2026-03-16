@@ -1,17 +1,22 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import FloorPlanEditor from "./components/FloorPlanEditor"
 import SimulationView from "./components/SimulationView"
 import Toolbar from "./components/Toolbar"
 import ControlPanel from "./components/ControlPanel"
 import ResultsPanel from "./components/ResultsPanel"
+import AuthModal from "./components/AuthModal"
+import SavedPlans from "./components/SavedPlans"
 import { TEMPLATES } from "./utils/templates"
+import { supabase } from "./utils/supabase"
 import "./App.css"
 
 const DEFAULT_FLOOR_PLAN = TEMPLATES[0].floorPlan
+const WS_URL = import.meta.env.VITE_WS_URL || "wss://ghostcrowd-production.up.railway.app"
 
 export default function App() {
   const [activeTool, setActiveTool] = useState("wall")
   const [floorPlan, setFloorPlan] = useState(DEFAULT_FLOOR_PLAN)
+  const [floorPlanName, setFloorPlanName] = useState("Untitled")
   const [agentCount, setAgentCount] = useState(50)
   const [simulationState, setSimulationState] = useState(null)
   const [currentFrame, setCurrentFrame] = useState(null)
@@ -21,7 +26,22 @@ export default function App() {
   const [showHeatMap, setShowHeatMap] = useState(false)
   const [showBottlenecks, setShowBottlenecks] = useState(true)
   const wsRef = useRef(null)
-  const simViewRef = useRef(null)
+
+  // Auth state
+  const [user, setUser] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showSavedPlans, setShowSavedPlans] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null) // null | 'saving' | 'saved' | 'error'
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const startSimulation = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
@@ -32,7 +52,7 @@ export default function App() {
     setShowHeatMap(false)
     setSimulationState("running")
 
-    const ws = new WebSocket("wss://ghostcrowd-production.up.railway.app/simulate")
+    const ws = new WebSocket(`${WS_URL}/simulate`)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -86,10 +106,44 @@ export default function App() {
     const canvas = document.querySelector("canvas")
     if (!canvas) return
     const link = document.createElement("a")
-    link.download = "ghostcrowd-heatmap.png"
+    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
     link.href = canvas.toDataURL("image/png")
     link.click()
-  }, [])
+  }, [floorPlanName])
+
+  const saveFloorPlan = useCallback(async () => {
+    if (!user) { setShowAuthModal(true); return }
+    setSaveStatus('saving')
+
+    const existing = await supabase
+      .from('floor_plans')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('name', floorPlanName)
+      .single()
+
+    let error
+    if (existing.data) {
+      const res = await supabase
+        .from('floor_plans')
+        .update({ data: floorPlan, updated_at: new Date().toISOString() })
+        .eq('id', existing.data.id)
+      error = res.error
+    } else {
+      const res = await supabase
+        .from('floor_plans')
+        .insert({ user_id: user.id, name: floorPlanName, data: floorPlan })
+      error = res.error
+    }
+
+    setSaveStatus(error ? 'error' : 'saved')
+    setTimeout(() => setSaveStatus(null), 2000)
+  }, [user, floorPlan, floorPlanName])
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+  }
 
   const isSimulating = simulationState === "running"
   const isDone = simulationState === "done"
@@ -98,7 +152,39 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="logo">👻 GhostCrowd</div>
-        <div className="header-subtitle">Pedestrian flow simulator</div>
+
+        {/* Floor plan name (editable) */}
+        {!isSimulating && !isDone && (
+          <input
+            className="plan-name-input"
+            value={floorPlanName}
+            onChange={e => setFloorPlanName(e.target.value)}
+            placeholder="Untitled"
+          />
+        )}
+        {(isSimulating || isDone) && (
+          <div className="plan-name-display">{floorPlanName}</div>
+        )}
+
+        <div className="header-actions">
+          {!isSimulating && (
+            <>
+              <button className="header-btn" onClick={saveFloorPlan} title="Save floor plan">
+                {saveStatus === 'saving' ? '...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '✗ Error' : '💾 Save'}
+              </button>
+              {user && (
+                <button className="header-btn" onClick={() => setShowSavedPlans(true)} title="Open saved plans">
+                  📁 My Plans
+                </button>
+              )}
+            </>
+          )}
+          {user ? (
+            <button className="header-btn" onClick={signOut}>Sign out</button>
+          ) : (
+            <button className="header-btn header-btn-accent" onClick={() => setShowAuthModal(true)}>Sign in</button>
+          )}
+        </div>
       </header>
 
       <div className="app-body">
@@ -154,6 +240,21 @@ export default function App() {
           )}
         </aside>
       </div>
+
+      {showAuthModal && (
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          onAuth={setUser}
+        />
+      )}
+
+      {showSavedPlans && (
+        <SavedPlans
+          user={user}
+          onLoad={(data, name) => { setFloorPlan(data); setFloorPlanName(name) }}
+          onClose={() => setShowSavedPlans(false)}
+        />
+      )}
     </div>
   )
 }
