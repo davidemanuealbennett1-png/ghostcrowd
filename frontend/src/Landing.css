@@ -1,3 +1,7 @@
+html, body {
+  overflow-y: scroll !important;
+  height: auto !important;
+}
 :root {
   --bg: #080b14;
   --bg2: #0d1020;
