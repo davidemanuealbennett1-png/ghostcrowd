@@ -32,7 +32,7 @@ export default function App() {
     setShowHeatMap(false)
     setSimulationState("running")
 
-    const ws = new WebSocket("ws://localhost:8000/simulate")
+    const ws = new WebSocket("wss://ghostcrowd-production.up.railway.app/simulate")
     wsRef.current = ws
 
     ws.onopen = () => {
