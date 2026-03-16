@@ -2,12 +2,17 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html {
+  height: 100%;
+  overflow-y: scroll;
+}
+
+body {
   height: 100%;
   margin: 0;
   padding: 0;
 }
+
 #root {
   height: 100%;
-  overflow-y: auto;
 }

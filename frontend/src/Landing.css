@@ -15,9 +15,7 @@
   font-family: 'DM Sans', sans-serif;
   background: var(--bg);
   color: var(--text);
-  overflow-x: hidden;
-  overflow-y: auto;
-  height: 100vh;
+  
 }
 
 /* NAV */
