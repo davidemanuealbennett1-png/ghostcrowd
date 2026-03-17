@@ -1,4 +1,5 @@
 import { supabase } from './utils/supabase'
+import { useParams, Link } from 'react-router-dom'
 import SimulationView from './components/SimulationView'
 import ControlPanel from './components/ControlPanel'
 import ResultsPanel from './components/ResultsPanel'
