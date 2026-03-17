@@ -3,6 +3,13 @@ import { useRef, useEffect } from "react"
 const GRID_SIZE = 30
 function toPx(m) { return m * GRID_SIZE }
 
+const TYPE_COLORS = {
+  customer: [167, 139, 250],
+  staff: [52, 211, 153],
+  child: [251, 191, 36],
+  elderly: [148, 163, 184],
+}
+
 export default function SimulationView({ floorPlan, frame, heatMap, isDone, bottlenecks }) {
   const canvasRef = useRef(null)
   const W = toPx(floorPlan.width)
@@ -92,7 +99,7 @@ export default function SimulationView({ floorPlan, frame, heatMap, isDone, bott
       ctx.fillRect(0, 0, W, H)
     }
 
-    // Agents — colored by type
+    // Agents
     if (frame && frame.agents) {
       const densityMap = {}
       for (const agent of frame.agents) {
@@ -106,18 +113,16 @@ export default function SimulationView({ floorPlan, frame, heatMap, isDone, bott
         if (agent.reached) continue
         const ax = toPx(agent.x), ay = toPx(agent.y)
 
-        let r2, g2, b2
-        if (agent.color) {
-          // Use agent type color, but blend toward red based on density
-          const density = (densityMap[`${Math.floor(agent.x)},${Math.floor(agent.y)}`] || 1) / maxDensity
-          r2 = Math.floor(agent.color[0] * (1-density*0.6) + 248 * density*0.6)
-          g2 = Math.floor(agent.color[1] * (1-density*0.6) + 113 * density*0.6)
-          b2 = Math.floor(agent.color[2] * (1-density*0.6) + 113 * density*0.6)
-        } else {
-          r2 = 167; g2 = 139; b2 = 250
-        }
+        // Get base color from agent type
+        const baseColor = TYPE_COLORS[agent.type] || TYPE_COLORS.customer
+        const density = (densityMap[`${Math.floor(agent.x)},${Math.floor(agent.y)}`] || 1) / maxDensity
 
-        // Panic agents pulse red
+        // Blend toward red as density increases
+        let r2 = Math.floor(baseColor[0] * (1 - density * 0.6) + 248 * density * 0.6)
+        let g2 = Math.floor(baseColor[1] * (1 - density * 0.6) + 113 * density * 0.6)
+        let b2 = Math.floor(baseColor[2] * (1 - density * 0.6) + 113 * density * 0.6)
+
+        // Panic tint
         if (agent.panic) {
           r2 = Math.min(255, r2 + 80)
           g2 = Math.max(0, g2 - 40)
