@@ -74,9 +74,9 @@ export default function AgentTypeEditor({ agentTypes, setAgentTypes, disabled })
 
       {open && (
         <div style={{
-          position: 'absolute',
-          left: '56px',
-          top: 0,
+          position: 'fixed',
+          left: '72px',
+          top: '120px',
           background: '#1a1d2e',
           border: '1px solid #2d3148',
           borderRadius: 10,
