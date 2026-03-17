@@ -7,15 +7,23 @@ import ResultsPanel from "./components/ResultsPanel"
 import AuthModal from "./components/AuthModal"
 import SavedPlans from "./components/SavedPlans"
 import ShareButton from "./components/ShareButton"
+import PricingModal from "./components/PricingModal"
 import { DEFAULT_PRESETS } from "./components/AgentTypeEditor"
 import { TEMPLATES } from "./utils/templates"
 import { supabase } from "./utils/supabase"
 import { generatePDFReport } from "./utils/pdfReport"
 import { usePlaybackRecorder } from "./utils/usePlaybackRecorder"
+import { useSubscription, TIER_LIMITS } from "./utils/useSubscription"
 import "./App.css"
 
 const DEFAULT_FLOOR_PLAN = TEMPLATES[0].floorPlan
 const WS_URL = import.meta.env.VITE_WS_URL || "wss://ghostcrowd-production.up.railway.app"
+
+// Check for upgrade success/cancel in URL
+function getUpgradeStatus() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('upgrade')
+}
 
 export default function App() {
   const [activeTool, setActiveTool] = useState("wall")
@@ -39,12 +47,15 @@ export default function App() {
   const [panicMode, setPanicMode] = useState(false)
 
   const wsRef = useRef(null)
-  const canvasRef = useRef(null)
 
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
+  const [upgradeStatus, setUpgradeStatus] = useState(getUpgradeStatus())
+
+  const { tier, limits, canUse } = useSubscription(user)
 
   const {
     recording, playback, playbackFrame, playbackProgress,
@@ -56,6 +67,14 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null))
     return () => subscription.unsubscribe()
+  }, [])
+
+  // Clear upgrade status from URL
+  useEffect(() => {
+    if (upgradeStatus) {
+      window.history.replaceState({}, '', '/app')
+      setTimeout(() => setUpgradeStatus(null), 4000)
+    }
   }, [])
 
   useEffect(() => {
@@ -107,6 +126,9 @@ export default function App() {
   }, [])
 
   const startSimulation = useCallback(() => {
+    // Enforce agent limit based on tier
+    const cappedAgents = Math.min(agentCount, limits.agents)
+
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
     setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
@@ -117,7 +139,7 @@ export default function App() {
     wsRef.current = ws
 
     ws.onopen = () => ws.send(JSON.stringify({
-      agent_count: agentCount,
+      agent_count: cappedAgents,
       floor_plan: floorPlan,
       dt: 0.05,
       steps_per_frame: 3,
@@ -131,22 +153,19 @@ export default function App() {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
       if (msg.type === "frame") {
-        setCurrentFrame(msg)
-        recordFrame(msg)
+        setCurrentFrame(msg); recordFrame(msg)
         if (msg.panic !== undefined) setPanicMode(msg.panic)
       } else if (msg.type === "done") {
         setResults(msg.summary); setHeatMap(msg.heat_map)
-        setBottlenecks(msg.bottlenecks); setSimulationState("done")
-        stopRecording()
+        setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording()
       } else if (msg.type === "error") {
-        console.error("Simulation error:", msg.message)
-        setSimulationState(null); stopRecording()
+        console.error("Simulation error:", msg.message); setSimulationState(null); stopRecording()
       }
     }
 
     ws.onerror = () => { setSimulationState(null); stopRecording() }
     ws.onclose = () => {}
-  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, agentTypes, startRecording, recordFrame, stopRecording])
+  }, [floorPlan, agentCount, limits, simSpeed, spawnMode, spawnSchedule, agentTypes, startRecording, recordFrame, stopRecording])
 
   const stopSimulation = useCallback(() => {
     if (wsRef.current) {
@@ -172,17 +191,12 @@ export default function App() {
   }, [floorPlanName])
 
   const exportPDF = useCallback(async () => {
+    if (!canUse('pdf')) { setShowPricing(true); return }
     const canvas = document.querySelector("canvas")
     await generatePDFReport({
-      floorPlanName,
-      results,
-      bottlenecks,
-      agentTypes,
-      agentCount,
-      floorPlan,
-      canvasElement: canvas,
+      floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canvasElement: canvas,
     })
-  }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan])
+  }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canUse])
 
   const saveFloorPlan = useCallback(async () => {
     if (!user) { setShowAuthModal(true); return }
@@ -208,6 +222,18 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Upgrade notification */}
+      {upgradeStatus === 'success' && (
+        <div style={{
+          position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
+          borderRadius: 8, padding: '10px 20px', zIndex: 200,
+          fontSize: 13, color: '#4ade80',
+        }}>
+          🎉 Upgrade successful! Welcome to {tier}.
+        </div>
+      )}
+
       <header className="app-header">
         <div className="logo">👻 GhostCrowd</div>
         {!isSimulating && !isDone && (
@@ -224,6 +250,17 @@ export default function App() {
               {user && <button className="header-btn" onClick={() => setShowSavedPlans(true)}>📁 My Plans</button>}
             </>
           )}
+          {/* Tier badge */}
+          <button
+            className="header-btn"
+            onClick={() => setShowPricing(true)}
+            style={{
+              borderColor: tier === 'pro' || tier === 'max' ? 'rgba(99,102,241,0.5)' : '#2d3148',
+              color: tier === 'pro' || tier === 'max' ? '#a5b4fc' : '#64748b',
+            }}
+          >
+            {tier === 'free' ? '⬆ Upgrade' : `✨ ${tier.charAt(0).toUpperCase() + tier.slice(1)}`}
+          </button>
           {user ? (
             <button className="header-btn" onClick={signOut}>Sign out</button>
           ) : (
@@ -263,12 +300,10 @@ export default function App() {
             />
           )}
 
-          {/* Playback controls */}
           {isDone && hasRecording && (
             <div style={{
               background: '#1a1d2e', borderTop: '1px solid #2d3148',
-              padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10,
-              width: '100%',
+              padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, width: '100%',
             }}>
               {!playback ? (
                 <button onClick={() => startPlayback(simSpeed)} style={{
@@ -309,6 +344,8 @@ export default function App() {
             panicMode={panicMode}
             onTriggerPanic={handleTriggerPanic}
             onCalmDown={handleCalmDown}
+            tier={tier} limits={limits}
+            onUpgrade={() => setShowPricing(true)}
           />
           {isDone && results && <ResultsPanel results={results} />}
         </aside>
@@ -319,6 +356,14 @@ export default function App() {
         <SavedPlans user={user}
           onLoad={(data, name) => { setFloorPlan(data); setFloorPlanName(name) }}
           onClose={() => setShowSavedPlans(false)} />
+      )}
+      {showPricing && (
+        <PricingModal
+          user={user}
+          currentTier={tier}
+          onClose={() => setShowPricing(false)}
+          onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }}
+        />
       )}
     </div>
   )

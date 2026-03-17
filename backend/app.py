@@ -1,14 +1,23 @@
 import asyncio
 import json
 import traceback
+import os
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env file for local development
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from simulation.engine import SimulationEngine
 from simulation.environment import Environment
 from simulation.analytics import Analytics
 from simulation.agent import Agent
+from billing import router as billing_router
 
 app = FastAPI(title="GhostCrowd Simulation API")
 
@@ -19,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(billing_router)
 
 
 def hex_to_rgb(hex_color):
@@ -68,41 +79,30 @@ async def simulate(websocket: WebSocket):
         sim_speed = float(config.get("sim_speed", 1.0))
         spawn_schedule = config.get("spawn_schedule", None)
         panic_mode = bool(config.get("panic_mode", False))
-
-        # Custom agent type definitions from frontend
-        # Format: [{ id, name, color, speedMin, speedMax, proportion }, ...]
         custom_agent_types = config.get("custom_agent_types", None)
 
         env = build_environment(floor_plan)
         sim = SimulationEngine(env, dt=dt, panic=panic_mode)
         analytics = Analytics(env.width, env.height, grid_resolution=1.0)
 
-        # Build spawn function based on custom types
         def spawn_custom(count):
             if not custom_agent_types:
                 sim.spawn_agents(count)
                 return
-
             active = [t for t in custom_agent_types if t.get("proportion", 0) > 0]
             if not active:
                 sim.spawn_agents(count)
                 return
-
             total = sum(t["proportion"] for t in active)
             weights = np.array([t["proportion"] / total for t in active])
-            type_ids = [t["id"] for t in active]
-
             for _ in range(count):
                 pos = env.random_spawn_position()
                 dest = env.random_exit_position()
-                chosen_idx = np.random.choice(len(type_ids), p=weights)
+                chosen_idx = np.random.choice(len(active), p=weights)
                 chosen = active[chosen_idx]
-
                 speed_min = float(chosen.get("speedMin", 1.0))
                 speed_max = float(chosen.get("speedMax", 1.5))
-                color_hex = chosen.get("color", "#a78bfa")
-                color_rgb = hex_to_rgb(color_hex)
-
+                color_rgb = hex_to_rgb(chosen.get("color", "#a78bfa"))
                 agent = Agent.__new__(Agent)
                 agent.id = len(sim.agents)
                 agent.position = np.array(pos, dtype=float)
@@ -117,12 +117,10 @@ async def simulate(websocket: WebSocket):
                 agent.mass = 75.0
                 agent.color = color_rgb
                 agent.reached_destination = False
-
                 direction = agent.destination - agent.position
                 dist = np.linalg.norm(direction)
                 if dist > 0:
                     agent.velocity = (direction / dist) * agent.desired_speed * 0.1
-
                 sim.agents.append(agent)
 
         if spawn_schedule:
@@ -133,7 +131,7 @@ async def simulate(websocket: WebSocket):
             spawned = agent_count
             spawn_queue = 0.0
 
-        print(f"[simulate] spawned {spawned} agents, starting loop")
+        print(f"[simulate] spawned {spawned} agents")
 
         await websocket.send_json({
             "type": "init",
