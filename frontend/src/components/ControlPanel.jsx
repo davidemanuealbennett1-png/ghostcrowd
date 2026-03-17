@@ -11,7 +11,7 @@ const SPEED_OPTIONS = [
 export default function ControlPanel({
   agentCount, setAgentCount,
   isSimulating, isDone,
-  onStart, onStop, onReset, onExport,
+  onStart, onStop, onReset, onExport, onExportPDF,
   currentFrame,
   showHeatMap, setShowHeatMap,
   showBottlenecks, setShowBottlenecks,
@@ -25,23 +25,21 @@ export default function ControlPanel({
 }) {
   const [showZoneWeights, setShowZoneWeights] = useState(false)
 
-  const updateSpawnWeight = (idx, weight) => {
+  const updateSpawnWeight = (idx, weight) =>
     setFloorPlan(fp => ({ ...fp, spawn_zones: fp.spawn_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z) }))
-  }
-  const updateExitWeight = (idx, weight) => {
+  const updateExitWeight = (idx, weight) =>
     setFloorPlan(fp => ({ ...fp, exit_zones: fp.exit_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z) }))
-  }
   const addScheduleEntry = () => {
     const lastTime = spawnSchedule.length > 0 ? spawnSchedule[spawnSchedule.length-1].time + 30 : 0
     setSpawnSchedule([...spawnSchedule, { time: lastTime, rate: 2 }])
   }
   const removeScheduleEntry = (idx) => setSpawnSchedule(spawnSchedule.filter((_, i) => i !== idx))
-  const updateScheduleEntry = (idx, field, val) => setSpawnSchedule(spawnSchedule.map((e, i) => i === idx ? { ...e, [field]: Number(val) } : e))
+  const updateScheduleEntry = (idx, field, val) =>
+    setSpawnSchedule(spawnSchedule.map((e, i) => i === idx ? { ...e, [field]: Number(val) } : e))
 
   return (
     <div className="control-panel">
 
-      {/* Agent count */}
       <div className="control-section">
         <div className="control-label">Agents</div>
         <div className="control-value">{agentCount} people</div>
@@ -52,7 +50,6 @@ export default function ControlPanel({
         </div>
       </div>
 
-      {/* Spawn mode */}
       {!isSimulating && !isDone && (
         <div className="control-section">
           <div className="control-label">Spawn Mode</div>
@@ -91,7 +88,6 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Zone weights */}
       {!isSimulating && !isDone && (floorPlan.spawn_zones.length > 1 || floorPlan.exit_zones.length > 1) && (
         <div className="control-section">
           <button onClick={() => setShowZoneWeights(v => !v)}
@@ -119,7 +115,6 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Sim speed */}
       <div className="control-section">
         <div className="control-label">Sim Speed</div>
         <div style={{ display:'flex', gap:4 }}>
@@ -135,7 +130,6 @@ export default function ControlPanel({
         </div>
       </div>
 
-      {/* Panic button */}
       {isSimulating && (
         <div className="control-section">
           <div className="control-label">Evacuation</div>
@@ -148,17 +142,22 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Run/stop/reset */}
       {!isSimulating && !isDone && <button className="btn btn-primary" onClick={onStart}>▶ Run Simulation</button>}
       {isSimulating && <button className="btn btn-danger" onClick={onStop}>⏹ Stop</button>}
       {isDone && (
         <>
           <button className="btn btn-secondary" onClick={onReset}>↩ Back to Editor</button>
-          {heatMap && <button className="btn btn-secondary" onClick={onExport} style={{ marginTop:4 }}>⬇ Export PNG</button>}
+          {heatMap && (
+            <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:4 }}>
+              <button className="btn btn-secondary" onClick={onExport}>⬇ Export PNG</button>
+              <button className="btn btn-secondary" onClick={onExportPDF} style={{ background:'rgba(99,102,241,0.15)', borderColor:'rgba(99,102,241,0.4)', color:'#a5b4fc' }}>
+                📄 Export PDF Report
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {/* Live stats */}
       {(isSimulating || isDone) && currentFrame && (
         <div className="control-section">
           <div className="control-label">Live Stats</div>
@@ -169,7 +168,6 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Overlays */}
       {isDone && (heatMap || bottlenecks) && (
         <div className="control-section">
           <div className="control-label">Overlays</div>
@@ -188,14 +186,13 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Legend */}
       <div className="control-section">
         <div className="control-label">Legend</div>
         <div className="zone-legend">
           <div><span className="zone-dot" style={{ background:"rgba(74,222,128,0.4)" }} />Spawn</div>
           <div><span className="zone-dot" style={{ background:"rgba(248,113,113,0.4)" }} />Exit</div>
           <div><span className="zone-dot" style={{ background:"#60a5fa" }} />Wall</div>
-          <div><span className="zone-dot" style={{ background:"#fbbf24" }} />Bottleneck !</div>
+          <div><span className="zone-dot" style={{ background:"#fbbf24" }} />Bottleneck</div>
         </div>
       </div>
     </div>

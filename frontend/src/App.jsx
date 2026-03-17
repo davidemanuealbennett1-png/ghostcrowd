@@ -10,6 +10,8 @@ import ShareButton from "./components/ShareButton"
 import { DEFAULT_PRESETS } from "./components/AgentTypeEditor"
 import { TEMPLATES } from "./utils/templates"
 import { supabase } from "./utils/supabase"
+import { generatePDFReport } from "./utils/pdfReport"
+import { usePlaybackRecorder } from "./utils/usePlaybackRecorder"
 import "./App.css"
 
 const DEFAULT_FLOOR_PLAN = TEMPLATES[0].floorPlan
@@ -30,7 +32,6 @@ export default function App() {
   const [backgroundImage, setBackgroundImage] = useState(null)
   const [undoStack, setUndoStack] = useState([])
   const [redoStack, setRedoStack] = useState([])
-
   const [simSpeed, setSimSpeed] = useState(1.0)
   const [spawnMode, setSpawnMode] = useState('instant')
   const [spawnSchedule, setSpawnSchedule] = useState([])
@@ -38,10 +39,18 @@ export default function App() {
   const [panicMode, setPanicMode] = useState(false)
 
   const wsRef = useRef(null)
+  const canvasRef = useRef(null)
+
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
+
+  const {
+    recording, playback, playbackFrame, playbackProgress,
+    hasRecording, startRecording, recordFrame, stopRecording,
+    startPlayback, stopPlayback, seekPlayback, frameCount,
+  } = usePlaybackRecorder()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -102,6 +111,7 @@ export default function App() {
     setCurrentFrame(null); setResults(null); setHeatMap(null)
     setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
     setSimulationState("running")
+    startRecording()
 
     const ws = new WebSocket(`${WS_URL}/simulate`)
     wsRef.current = ws
@@ -122,32 +132,36 @@ export default function App() {
       const msg = JSON.parse(event.data)
       if (msg.type === "frame") {
         setCurrentFrame(msg)
+        recordFrame(msg)
         if (msg.panic !== undefined) setPanicMode(msg.panic)
       } else if (msg.type === "done") {
         setResults(msg.summary); setHeatMap(msg.heat_map)
         setBottlenecks(msg.bottlenecks); setSimulationState("done")
+        stopRecording()
       } else if (msg.type === "error") {
-        console.error("Simulation error:", msg.message); setSimulationState(null)
+        console.error("Simulation error:", msg.message)
+        setSimulationState(null); stopRecording()
       }
     }
 
-    ws.onerror = () => setSimulationState(null)
+    ws.onerror = () => { setSimulationState(null); stopRecording() }
     ws.onclose = () => {}
-  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, agentTypes])
+  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, agentTypes, startRecording, recordFrame, stopRecording])
 
   const stopSimulation = useCallback(() => {
     if (wsRef.current) {
       try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
       wsRef.current.close()
     }
-    setSimulationState(null); setPanicMode(false)
-  }, [])
+    setSimulationState(null); setPanicMode(false); stopRecording()
+  }, [stopRecording])
 
   const resetAll = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
+    stopPlayback()
     setSimulationState(null); setCurrentFrame(null); setResults(null)
     setHeatMap(null); setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
-  }, [])
+  }, [stopPlayback])
 
   const exportHeatMap = useCallback(() => {
     const canvas = document.querySelector("canvas")
@@ -156,6 +170,19 @@ export default function App() {
     link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
     link.href = canvas.toDataURL("image/png"); link.click()
   }, [floorPlanName])
+
+  const exportPDF = useCallback(async () => {
+    const canvas = document.querySelector("canvas")
+    await generatePDFReport({
+      floorPlanName,
+      results,
+      bottlenecks,
+      agentTypes,
+      agentCount,
+      floorPlan,
+      canvasElement: canvas,
+    })
+  }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan])
 
   const saveFloorPlan = useCallback(async () => {
     if (!user) { setShowAuthModal(true); return }
@@ -177,6 +204,7 @@ export default function App() {
 
   const isSimulating = simulationState === "running"
   const isDone = simulationState === "done"
+  const activeFrame = playback ? playbackFrame : currentFrame
 
   return (
     <div className="app">
@@ -216,13 +244,13 @@ export default function App() {
           />
         </aside>
 
-        <main className="canvas-area">
+        <main className="canvas-area" style={{ flexDirection: 'column', gap: 0 }}>
           {isSimulating || isDone ? (
             <SimulationView
-              floorPlan={floorPlan} frame={currentFrame}
+              floorPlan={floorPlan} frame={activeFrame}
               heatMap={showHeatMap ? heatMap : null}
               bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
-              isDone={isDone}
+              isDone={isDone && !playback}
               agentTypes={agentTypes}
             />
           ) : (
@@ -234,6 +262,33 @@ export default function App() {
               backgroundImage={backgroundImage}
             />
           )}
+
+          {/* Playback controls */}
+          {isDone && hasRecording && (
+            <div style={{
+              background: '#1a1d2e', borderTop: '1px solid #2d3148',
+              padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%',
+            }}>
+              {!playback ? (
+                <button onClick={() => startPlayback(simSpeed)} style={{
+                  padding: '5px 12px', background: '#3730a3', border: '1px solid #6366f1',
+                  borderRadius: 6, color: 'white', fontSize: 12, cursor: 'pointer',
+                }}>▶ Replay</button>
+              ) : (
+                <button onClick={stopPlayback} style={{
+                  padding: '5px 12px', background: '#1e2235', border: '1px solid #2d3148',
+                  borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer',
+                }}>⏹ Stop</button>
+              )}
+              <input type="range" min={0} max={100} value={playbackProgress}
+                onChange={e => seekPlayback(Number(e.target.value))}
+                style={{ flex: 1, accentColor: '#6366f1' }} />
+              <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
+                {Math.round(playbackProgress)}% · {frameCount} frames
+              </span>
+            </div>
+          )}
         </main>
 
         <aside className="sidebar-right">
@@ -241,8 +296,8 @@ export default function App() {
             agentCount={agentCount} setAgentCount={setAgentCount}
             isSimulating={isSimulating} isDone={isDone}
             onStart={startSimulation} onStop={stopSimulation}
-            onReset={resetAll} onExport={exportHeatMap}
-            currentFrame={currentFrame}
+            onReset={resetAll} onExport={exportHeatMap} onExportPDF={exportPDF}
+            currentFrame={activeFrame}
             showHeatMap={showHeatMap} setShowHeatMap={setShowHeatMap}
             showBottlenecks={showBottlenecks} setShowBottlenecks={setShowBottlenecks}
             heatMap={heatMap} bottlenecks={bottlenecks}
