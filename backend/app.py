@@ -1,5 +1,6 @@
 import asyncio
 import json
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,7 +12,7 @@ app = FastAPI(title="GhostCrowd Simulation API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,19 +20,6 @@ app.add_middleware(
 
 
 def build_environment(floor_plan: dict) -> Environment:
-    """
-    Build an Environment from the floor plan JSON sent by the frontend.
-
-    Expected floor_plan format:
-    {
-        "width": 20,
-        "height": 15,
-        "walls": [{"x1":0,"y1":5,"x2":13,"y2":5}, ...],
-        "obstacles": [{"x":5,"y":5,"width":2,"height":2}, ...],
-        "spawn_zones": [{"x":0.5,"y":1,"w":2,"h":13}],
-        "exit_zones":  [{"x":17.5,"y":1,"w":2,"h":13}]
-    }
-    """
     width = floor_plan.get("width", 20)
     height = floor_plan.get("height", 15)
     env = Environment(width=width, height=height)
@@ -43,10 +31,12 @@ def build_environment(floor_plan: dict) -> Environment:
         env.add_obstacle(o["x"], o["y"], o["width"], o["height"])
 
     for z in floor_plan.get("spawn_zones", []):
-        env.add_spawn_zone(z["x"], z["y"], z["w"], z["h"])
+        weight = z.get("weight", 1.0)
+        env.add_spawn_zone(z["x"], z["y"], z["w"], z["h"], weight=weight)
 
     for z in floor_plan.get("exit_zones", []):
-        env.add_exit_zone(z["x"], z["y"], z["w"], z["h"])
+        weight = z.get("weight", 1.0)
+        env.add_exit_zone(z["x"], z["y"], z["w"], z["h"], weight=weight)
 
     return env
 
@@ -63,39 +53,9 @@ def health():
 
 @app.websocket("/simulate")
 async def simulate(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time simulation streaming.
-
-    Client sends one JSON message to start:
-    {
-        "agent_count": 50,
-        "floor_plan": { ... },
-        "dt": 0.05,           # optional
-        "steps_per_frame": 3  # optional, how many sim steps per update sent
-    }
-
-    Server streams back frames:
-    {
-        "type": "frame",
-        "time": 1.5,
-        "step": 30,
-        "agents": [{"id":0,"x":5.2,"y":3.1,"vx":0.8,"vy":0.2,"reached":false}, ...],
-        "active_count": 45,
-        "total_count": 50
-    }
-
-    When done:
-    {
-        "type": "done",
-        "summary": { ... },
-        "heat_map": [[...], ...],
-        "bottlenecks": [...]
-    }
-    """
     await websocket.accept()
 
     try:
-        # Wait for the config message from the client
         raw = await websocket.receive_text()
         config = json.loads(raw)
 
@@ -104,33 +64,66 @@ async def simulate(websocket: WebSocket):
         dt = float(config.get("dt", 0.05))
         steps_per_frame = int(config.get("steps_per_frame", 3))
         max_steps = int(config.get("max_steps", 3000))
+        sim_speed = float(config.get("sim_speed", 1.0))  # 0.25x to 4x
 
-        # Build environment and engine
+        # Time-varying spawn: list of {time, rate} defining agents/second over time
+        spawn_schedule = config.get("spawn_schedule", None)
+
         env = build_environment(floor_plan)
         sim = SimulationEngine(env, dt=dt)
-        sim.spawn_agents(agent_count)
         analytics = Analytics(env.width, env.height, grid_resolution=1.0)
 
-        # Send initial environment info
+        # If spawn_schedule is provided, spawn agents gradually
+        # Otherwise spawn all at once
+        if spawn_schedule:
+            # Don't pre-spawn — we'll spawn over time
+            spawned = 0
+            spawn_queue = 0.0
+        else:
+            sim.spawn_agents(agent_count)
+            spawned = agent_count
+            spawn_queue = 0.0
+
         await websocket.send_json({
             "type": "init",
             "environment": env.to_dict(),
             "agent_count": agent_count,
         })
 
-        # Run simulation, streaming frames
         step = 0
+        # Adjust sleep to control playback speed
+        # At 1x speed: ~20ms per frame. At 4x: ~5ms. At 0.25x: ~80ms
+        base_sleep = 0.02 / max(sim_speed, 0.1)
+
         while step < max_steps:
-            # Check for client disconnect or cancel message
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.0)
                 data = json.loads(msg)
                 if data.get("type") == "cancel":
                     break
+                # Allow speed changes mid-simulation
+                if "sim_speed" in data:
+                    sim_speed = float(data["sim_speed"])
+                    base_sleep = 0.02 / max(sim_speed, 0.1)
             except asyncio.TimeoutError:
-                pass  # No message from client, continue normally
+                pass
 
-            # Run several sim steps per frame for performance
+            # Gradual spawning based on schedule
+            if spawn_schedule and spawned < agent_count:
+                current_time = sim.time
+                # Find current spawn rate from schedule
+                rate = 1.0  # agents per second default
+                for entry in spawn_schedule:
+                    if current_time >= entry["time"]:
+                        rate = entry["rate"]
+                spawn_queue += rate * dt * steps_per_frame
+                to_spawn = int(spawn_queue)
+                if to_spawn > 0:
+                    to_spawn = min(to_spawn, agent_count - spawned)
+                    sim.spawn_agents(to_spawn)
+                    spawned += to_spawn
+                    spawn_queue -= to_spawn
+
             for _ in range(steps_per_frame):
                 sim.step()
                 analytics.record_frame(sim.agents)
@@ -138,19 +131,12 @@ async def simulate(websocket: WebSocket):
             step += steps_per_frame
             state = sim.get_state()
 
-            # Send frame to client
-            await websocket.send_json({
-                "type": "frame",
-                **state,
-            })
+            await websocket.send_json({"type": "frame", **state})
+            await asyncio.sleep(base_sleep)
 
-            # Yield control so other coroutines can run
-            await asyncio.sleep(0)
-
-            if state["active_count"] == 0:
+            if state["active_count"] == 0 and spawned >= agent_count:
                 break
 
-        # Send final results
         summary = analytics.get_summary(sim.agents)
         heat_map = analytics.get_normalized_heat_map()
         bottlenecks = analytics.get_bottlenecks(threshold=0.6)

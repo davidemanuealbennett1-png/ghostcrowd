@@ -27,53 +27,44 @@ export default function App() {
   const [showHeatMap, setShowHeatMap] = useState(false)
   const [showBottlenecks, setShowBottlenecks] = useState(true)
   const [backgroundImage, setBackgroundImage] = useState(null)
-  const wsRef = useRef(null)
-
-  // Undo/redo
   const [undoStack, setUndoStack] = useState([])
   const [redoStack, setRedoStack] = useState([])
 
-  // Auth
+  // Batch 2 state
+  const [simSpeed, setSimSpeed] = useState(1.0)
+  const [spawnMode, setSpawnMode] = useState('instant')
+  const [spawnSchedule, setSpawnSchedule] = useState([])
+
+  const wsRef = useRef(null)
+
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
+    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null))
     return () => subscription.unsubscribe()
   }, [])
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT') return
-      const isSimulating = simulationState === "running"
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSimulating) {
+      const isSim = simulationState === "running"
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSim) {
         e.preventDefault()
         if (undoStack.length === 0) return
         const prev = undoStack[undoStack.length - 1]
-        setRedoStack(s => [...s, floorPlan])
-        setUndoStack(s => s.slice(0, -1))
-        setFloorPlan(prev)
+        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0, -1)); setFloorPlan(prev)
       }
-
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSimulating) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSim) {
         e.preventDefault()
         if (redoStack.length === 0) return
         const next = redoStack[redoStack.length - 1]
-        setUndoStack(s => [...s, floorPlan])
-        setRedoStack(s => s.slice(0, -1))
-        setFloorPlan(next)
+        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0, -1)); setFloorPlan(next)
       }
-
-      if (!isSimulating) {
+      if (!isSim) {
         if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
         if (e.key === 'd' || e.key === 'D') setActiveTool('door')
         if (e.key === 'r' || e.key === 'R') setActiveTool('obstacle')
@@ -85,6 +76,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [undoStack, redoStack, floorPlan, simulationState])
 
+  const handleSpeedChange = useCallback((newSpeed) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "speed", sim_speed: newSpeed }))
+    }
+  }, [])
+
   const startSimulation = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
@@ -95,8 +92,13 @@ export default function App() {
     wsRef.current = ws
 
     ws.onopen = () => ws.send(JSON.stringify({
-      agent_count: agentCount, floor_plan: floorPlan,
-      dt: 0.05, steps_per_frame: 3, max_steps: 3000,
+      agent_count: agentCount,
+      floor_plan: floorPlan,
+      dt: 0.05,
+      steps_per_frame: 3,
+      max_steps: 3000,
+      sim_speed: simSpeed,
+      spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
     }))
 
     ws.onmessage = (event) => {
@@ -106,14 +108,13 @@ export default function App() {
         setResults(msg.summary); setHeatMap(msg.heat_map)
         setBottlenecks(msg.bottlenecks); setSimulationState("done")
       } else if (msg.type === "error") {
-        console.error("Simulation error:", msg.message)
-        setSimulationState(null)
+        console.error("Simulation error:", msg.message); setSimulationState(null)
       }
     }
 
     ws.onerror = () => setSimulationState(null)
     ws.onclose = () => {}
-  }, [floorPlan, agentCount])
+  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule])
 
   const stopSimulation = useCallback(() => {
     if (wsRef.current) {
@@ -134,8 +135,7 @@ export default function App() {
     if (!canvas) return
     const link = document.createElement("a")
     link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
-    link.href = canvas.toDataURL("image/png")
-    link.click()
+    link.href = canvas.toDataURL("image/png"); link.click()
   }, [floorPlanName])
 
   const saveFloorPlan = useCallback(async () => {
@@ -188,39 +188,28 @@ export default function App() {
       <div className="app-body">
         <aside className="sidebar-left">
           <Toolbar
-            activeTool={activeTool}
-            setActiveTool={setActiveTool}
-            disabled={isSimulating}
-            floorPlan={floorPlan}
-            setFloorPlan={setFloorPlan}
-            undoStack={undoStack}
-            setUndoStack={setUndoStack}
-            redoStack={redoStack}
-            setRedoStack={setRedoStack}
-            backgroundImage={backgroundImage}
-            setBackgroundImage={setBackgroundImage}
+            activeTool={activeTool} setActiveTool={setActiveTool}
+            disabled={isSimulating} floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+            undoStack={undoStack} setUndoStack={setUndoStack}
+            redoStack={redoStack} setRedoStack={setRedoStack}
+            backgroundImage={backgroundImage} setBackgroundImage={setBackgroundImage}
           />
         </aside>
 
         <main className="canvas-area">
           {isSimulating || isDone ? (
             <SimulationView
-              floorPlan={floorPlan}
-              frame={currentFrame}
+              floorPlan={floorPlan} frame={currentFrame}
               heatMap={showHeatMap ? heatMap : null}
               bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
               isDone={isDone}
             />
           ) : (
             <FloorPlanEditor
-              floorPlan={floorPlan}
-              setFloorPlan={setFloorPlan}
-              activeTool={activeTool}
-              setActiveTool={setActiveTool}
-              undoStack={undoStack}
-              setUndoStack={setUndoStack}
-              redoStack={redoStack}
-              setRedoStack={setRedoStack}
+              floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+              activeTool={activeTool} setActiveTool={setActiveTool}
+              undoStack={undoStack} setUndoStack={setUndoStack}
+              redoStack={redoStack} setRedoStack={setRedoStack}
               backgroundImage={backgroundImage}
             />
           )}
@@ -228,21 +217,19 @@ export default function App() {
 
         <aside className="sidebar-right">
           <ControlPanel
-            agentCount={agentCount}
-            setAgentCount={setAgentCount}
-            isSimulating={isSimulating}
-            isDone={isDone}
-            onStart={startSimulation}
-            onStop={stopSimulation}
-            onReset={resetAll}
-            onExport={exportHeatMap}
+            agentCount={agentCount} setAgentCount={setAgentCount}
+            isSimulating={isSimulating} isDone={isDone}
+            onStart={startSimulation} onStop={stopSimulation}
+            onReset={resetAll} onExport={exportHeatMap}
             currentFrame={currentFrame}
-            showHeatMap={showHeatMap}
-            setShowHeatMap={setShowHeatMap}
-            showBottlenecks={showBottlenecks}
-            setShowBottlenecks={setShowBottlenecks}
-            heatMap={heatMap}
-            bottlenecks={bottlenecks}
+            showHeatMap={showHeatMap} setShowHeatMap={setShowHeatMap}
+            showBottlenecks={showBottlenecks} setShowBottlenecks={setShowBottlenecks}
+            heatMap={heatMap} bottlenecks={bottlenecks}
+            simSpeed={simSpeed} setSimSpeed={setSimSpeed}
+            spawnMode={spawnMode} setSpawnMode={setSpawnMode}
+            spawnSchedule={spawnSchedule} setSpawnSchedule={setSpawnSchedule}
+            floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+            onSpeedChange={handleSpeedChange}
           />
           {isDone && results && <ResultsPanel results={results} />}
         </aside>
@@ -250,11 +237,9 @@ export default function App() {
 
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
       {showSavedPlans && (
-        <SavedPlans
-          user={user}
+        <SavedPlans user={user}
           onLoad={(data, name) => { setFloorPlan(data); setFloorPlanName(name) }}
-          onClose={() => setShowSavedPlans(false)}
-        />
+          onClose={() => setShowSavedPlans(false)} />
       )}
     </div>
   )
