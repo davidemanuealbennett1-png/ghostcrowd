@@ -1,11 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { supabase } from '../utils/supabase'
-import SimulationView from '../components/SimulationView'
-import ControlPanel from '../components/ControlPanel'
-import ResultsPanel from '../components/ResultsPanel'
-import FloorPlanEditor from '../components/FloorPlanEditor'
-import '../App.css'
+import { supabase } from './utils/supabase'
+import SimulationView from './components/SimulationView'
+import ControlPanel from './components/ControlPanel'
+import ResultsPanel from './components/ResultsPanel'
+import FloorPlanEditor from './components/FloorPlanEditor'
+import './App.css'
 
 const WS_URL = import.meta.env.VITE_WS_URL || "wss://ghostcrowd-production.up.railway.app"
 
