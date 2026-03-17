@@ -1,5 +1,6 @@
-import { supabase } from './utils/supabase'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { supabase } from './utils/supabase'
 import SimulationView from './components/SimulationView'
 import ControlPanel from './components/ControlPanel'
 import ResultsPanel from './components/ResultsPanel'
@@ -116,11 +117,11 @@ export default function ShareView() {
   )
 
   if (notFound) return (
-    <div className="app" style={{ alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+    <div className="app" style={{ alignItems: 'center', justifyContent: 'center', gap: 16, flexDirection: 'column' }}>
       <div style={{ fontSize: 48 }}>👻</div>
       <div style={{ color: '#e2e8f0', fontSize: 20, fontWeight: 700 }}>Floor plan not found</div>
       <div style={{ color: '#64748b', fontSize: 14 }}>This link may have expired or been removed.</div>
-      <Link to="/app" className="btn btn-primary" style={{ marginTop: 8, textDecoration: 'none', padding: '10px 24px', borderRadius: 8 }}>
+      <Link to="/app" style={{ marginTop: 8, textDecoration: 'none', padding: '10px 24px', borderRadius: 8, background: '#6366f1', color: 'white', fontWeight: 600 }}>
         Create your own →
       </Link>
     </div>
@@ -135,7 +136,7 @@ export default function ShareView() {
         <Link to="/" className="logo" style={{ textDecoration: 'none' }}>👻 GhostCrowd</Link>
         <div className="plan-name-display" style={{ marginLeft: 16 }}>{planName}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#64748b' }}>Shared floor plan — view only</span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Shared floor plan</span>
           <Link to="/app" className="header-btn" style={{ textDecoration: 'none' }}>
             Create your own →
           </Link>
@@ -155,7 +156,7 @@ export default function ShareView() {
           ) : (
             <FloorPlanEditor
               floorPlan={floorPlan}
-              setFloorPlan={() => {}} // read-only
+              setFloorPlan={() => {}}
               activeTool="select"
               setActiveTool={() => {}}
             />
