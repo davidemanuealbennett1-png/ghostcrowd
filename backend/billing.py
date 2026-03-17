@@ -8,7 +8,7 @@ stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 PRICE_IDS = {
     "basic": os.environ.get("STRIPE_BASIC_PRICE_ID"),
-    "pro": os.environ.get("STRIPE_PRO_PRICE_ID"),
+    "premium": os.environ.get("STRIPE_PRO_PRICE_ID"),
     "max": os.environ.get("STRIPE_MAX_PRICE_ID"),
 }
 
@@ -86,13 +86,11 @@ async def stripe_webhook(request: Request):
         tier = session.get("metadata", {}).get("tier")
         customer_id = session.get("customer")
         print(f"[webhook] checkout completed: user={user_id} tier={tier} customer={customer_id}")
-        # TODO: update user tier in Supabase here
 
     elif event["type"] == "customer.subscription.deleted":
         sub = event["data"]["object"]
         user_id = sub.get("metadata", {}).get("user_id")
         print(f"[webhook] subscription cancelled: user={user_id}")
-        # TODO: downgrade user to free tier in Supabase
 
     return JSONResponse({"status": "ok"})
 
@@ -124,26 +122,26 @@ async def get_plans():
                 "price_id": PRICE_IDS["basic"],
             },
             {
-                "id": "pro",
-                "name": "Pro",
+                "id": "premium",
+                "name": "PREMIUM",
                 "price": 19,
                 "interval": "month",
                 "agents": 500,
                 "floor_plans": -1,
                 "featured": True,
                 "features": ["Unlimited floor plans", "Up to 500 agents", "Heat maps + bottleneck detection", "PDF report export", "Share simulations via link", "All agent types", "Priority support"],
-                "cta": "Start Pro",
-                "price_id": PRICE_IDS["pro"],
+                "cta": "Start Premium",
+                "price_id": PRICE_IDS["premium"],
             },
             {
                 "id": "max",
-                "name": "Business",
+                "name": "MAX",
                 "price": 49,
                 "interval": "month",
                 "agents": 2000,
                 "floor_plans": -1,
                 "features": ["Up to 2,000 agents", "Team collaboration", "White-label PDF reports", "API access", "Priority support", "Dedicated onboarding"],
-                "cta": "Start Business",
+                "cta": "Start Max",
                 "price_id": PRICE_IDS["max"],
             },
         ]

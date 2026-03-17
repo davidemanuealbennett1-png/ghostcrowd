@@ -5,7 +5,7 @@ import { supabase } from './supabase'
 export const TIER_LIMITS = {
   free: { agents: 50, floor_plans: 1, pdf: false, share: true, bottlenecks: true },
   basic: { agents: 100, floor_plans: 3, pdf: false, share: false, bottlenecks: false },
-  pro: { agents: 500, floor_plans: Infinity, pdf: true, share: true, bottlenecks: true },
+  premium: { agents: 500, floor_plans: Infinity, pdf: true, share: true, bottlenecks: true },
   max: { agents: 2000, floor_plans: Infinity, pdf: true, share: true, bottlenecks: true },
 }
 
