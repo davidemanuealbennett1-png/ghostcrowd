@@ -26,8 +26,14 @@ export default function App() {
   const [bottlenecks, setBottlenecks] = useState(null)
   const [showHeatMap, setShowHeatMap] = useState(false)
   const [showBottlenecks, setShowBottlenecks] = useState(true)
+  const [backgroundImage, setBackgroundImage] = useState(null)
   const wsRef = useRef(null)
 
+  // Undo/redo
+  const [undoStack, setUndoStack] = useState([])
+  const [redoStack, setRedoStack] = useState([])
+
+  // Auth
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
@@ -43,37 +49,62 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.target.tagName === 'INPUT') return
+      const isSimulating = simulationState === "running"
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSimulating) {
+        e.preventDefault()
+        if (undoStack.length === 0) return
+        const prev = undoStack[undoStack.length - 1]
+        setRedoStack(s => [...s, floorPlan])
+        setUndoStack(s => s.slice(0, -1))
+        setFloorPlan(prev)
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSimulating) {
+        e.preventDefault()
+        if (redoStack.length === 0) return
+        const next = redoStack[redoStack.length - 1]
+        setUndoStack(s => [...s, floorPlan])
+        setRedoStack(s => s.slice(0, -1))
+        setFloorPlan(next)
+      }
+
+      if (!isSimulating) {
+        if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
+        if (e.key === 'd' || e.key === 'D') setActiveTool('door')
+        if (e.key === 'r' || e.key === 'R') setActiveTool('obstacle')
+        if (e.key === 's' || e.key === 'S') setActiveTool('select')
+        if (e.key === 'e' || e.key === 'E') setActiveTool('erase')
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [undoStack, redoStack, floorPlan, simulationState])
+
   const startSimulation = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
-    setCurrentFrame(null)
-    setResults(null)
-    setHeatMap(null)
-    setBottlenecks(null)
-    setShowHeatMap(false)
+    setCurrentFrame(null); setResults(null); setHeatMap(null)
+    setBottlenecks(null); setShowHeatMap(false)
     setSimulationState("running")
 
     const ws = new WebSocket(`${WS_URL}/simulate`)
     wsRef.current = ws
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        agent_count: agentCount,
-        floor_plan: floorPlan,
-        dt: 0.05,
-        steps_per_frame: 3,
-        max_steps: 3000,
-      }))
-    }
+    ws.onopen = () => ws.send(JSON.stringify({
+      agent_count: agentCount, floor_plan: floorPlan,
+      dt: 0.05, steps_per_frame: 3, max_steps: 3000,
+    }))
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-      if (msg.type === "frame") {
-        setCurrentFrame(msg)
-      } else if (msg.type === "done") {
-        setResults(msg.summary)
-        setHeatMap(msg.heat_map)
-        setBottlenecks(msg.bottlenecks)
-        setSimulationState("done")
+      if (msg.type === "frame") setCurrentFrame(msg)
+      else if (msg.type === "done") {
+        setResults(msg.summary); setHeatMap(msg.heat_map)
+        setBottlenecks(msg.bottlenecks); setSimulationState("done")
       } else if (msg.type === "error") {
         console.error("Simulation error:", msg.message)
         setSimulationState(null)
@@ -94,12 +125,8 @@ export default function App() {
 
   const resetAll = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
-    setSimulationState(null)
-    setCurrentFrame(null)
-    setResults(null)
-    setHeatMap(null)
-    setBottlenecks(null)
-    setShowHeatMap(false)
+    setSimulationState(null); setCurrentFrame(null); setResults(null)
+    setHeatMap(null); setBottlenecks(null); setShowHeatMap(false)
   }, [])
 
   const exportHeatMap = useCallback(() => {
@@ -114,36 +141,20 @@ export default function App() {
   const saveFloorPlan = useCallback(async () => {
     if (!user) { setShowAuthModal(true); return }
     setSaveStatus('saving')
-
-    const existing = await supabase
-      .from('floor_plans')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('name', floorPlanName)
-      .single()
-
+    const existing = await supabase.from('floor_plans').select('id').eq('user_id', user.id).eq('name', floorPlanName).single()
     let error
     if (existing.data) {
-      const res = await supabase
-        .from('floor_plans')
-        .update({ data: floorPlan, updated_at: new Date().toISOString() })
-        .eq('id', existing.data.id)
+      const res = await supabase.from('floor_plans').update({ data: floorPlan, updated_at: new Date().toISOString() }).eq('id', existing.data.id)
       error = res.error
     } else {
-      const res = await supabase
-        .from('floor_plans')
-        .insert({ user_id: user.id, name: floorPlanName, data: floorPlan })
+      const res = await supabase.from('floor_plans').insert({ user_id: user.id, name: floorPlanName, data: floorPlan })
       error = res.error
     }
-
     setSaveStatus(error ? 'error' : 'saved')
     setTimeout(() => setSaveStatus(null), 2000)
   }, [user, floorPlan, floorPlanName])
 
-  const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-  }
+  const signOut = async () => { await supabase.auth.signOut(); setUser(null) }
 
   const isSimulating = simulationState === "running"
   const isDone = simulationState === "done"
@@ -152,36 +163,18 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="logo">👻 GhostCrowd</div>
-
         {!isSimulating && !isDone && (
-          <input
-            className="plan-name-input"
-            value={floorPlanName}
-            onChange={e => setFloorPlanName(e.target.value)}
-            placeholder="Untitled"
-          />
+          <input className="plan-name-input" value={floorPlanName} onChange={e => setFloorPlanName(e.target.value)} placeholder="Untitled" />
         )}
-        {(isSimulating || isDone) && (
-          <div className="plan-name-display">{floorPlanName}</div>
-        )}
-
+        {(isSimulating || isDone) && <div className="plan-name-display">{floorPlanName}</div>}
         <div className="header-actions">
           {!isSimulating && (
             <>
-              <button className="header-btn" onClick={saveFloorPlan} title="Save floor plan">
+              <button className="header-btn" onClick={saveFloorPlan}>
                 {saveStatus === 'saving' ? '...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '✗ Error' : '💾 Save'}
               </button>
-              <ShareButton
-                user={user}
-                floorPlan={floorPlan}
-                floorPlanName={floorPlanName}
-                onRequestAuth={() => setShowAuthModal(true)}
-              />
-              {user && (
-                <button className="header-btn" onClick={() => setShowSavedPlans(true)}>
-                  📁 My Plans
-                </button>
-              )}
+              <ShareButton user={user} floorPlan={floorPlan} floorPlanName={floorPlanName} onRequestAuth={() => setShowAuthModal(true)} />
+              {user && <button className="header-btn" onClick={() => setShowSavedPlans(true)}>📁 My Plans</button>}
             </>
           )}
           {user ? (
@@ -200,6 +193,12 @@ export default function App() {
             disabled={isSimulating}
             floorPlan={floorPlan}
             setFloorPlan={setFloorPlan}
+            undoStack={undoStack}
+            setUndoStack={setUndoStack}
+            redoStack={redoStack}
+            setRedoStack={setRedoStack}
+            backgroundImage={backgroundImage}
+            setBackgroundImage={setBackgroundImage}
           />
         </aside>
 
@@ -218,6 +217,11 @@ export default function App() {
               setFloorPlan={setFloorPlan}
               activeTool={activeTool}
               setActiveTool={setActiveTool}
+              undoStack={undoStack}
+              setUndoStack={setUndoStack}
+              redoStack={redoStack}
+              setRedoStack={setRedoStack}
+              backgroundImage={backgroundImage}
             />
           )}
         </main>
@@ -244,13 +248,7 @@ export default function App() {
         </aside>
       </div>
 
-      {showAuthModal && (
-        <AuthModal
-          onClose={() => setShowAuthModal(false)}
-          onAuth={setUser}
-        />
-      )}
-
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
       {showSavedPlans && (
         <SavedPlans
           user={user}

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { TEMPLATES } from "../utils/templates"
+import RoomSettings from "./RoomSettings"
 
 const TOOLS = [
   { id: "wall", icon: "📏", label: "Wall" },
@@ -11,16 +12,41 @@ const TOOLS = [
   { id: "erase", icon: "🗑", label: "Erase" },
 ]
 
-export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan, setFloorPlan }) {
+export default function Toolbar({
+  activeTool, setActiveTool, disabled,
+  floorPlan, setFloorPlan,
+  undoStack, setUndoStack, redoStack, setRedoStack,
+  backgroundImage, setBackgroundImage,
+}) {
   const [showTemplates, setShowTemplates] = useState(false)
 
   const clearAll = () => {
     if (confirm("Clear all walls and objects?")) {
+      setUndoStack(s => [...s, floorPlan])
+      setRedoStack([])
       setFloorPlan(fp => ({ ...fp, walls: [], obstacles: [] }))
     }
   }
 
+  const undo = () => {
+    if (undoStack.length === 0) return
+    const prev = undoStack[undoStack.length - 1]
+    setRedoStack(s => [...s, floorPlan])
+    setUndoStack(s => s.slice(0, -1))
+    setFloorPlan(prev)
+  }
+
+  const redo = () => {
+    if (redoStack.length === 0) return
+    const next = redoStack[redoStack.length - 1]
+    setUndoStack(s => [...s, floorPlan])
+    setRedoStack(s => s.slice(0, -1))
+    setFloorPlan(next)
+  }
+
   const applyTemplate = (template) => {
+    setUndoStack(s => [...s, floorPlan])
+    setRedoStack([])
     setFloorPlan(template.floorPlan)
     setShowTemplates(false)
   }
@@ -43,6 +69,35 @@ export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan
 
       <div className="tool-divider" />
 
+      {/* Undo */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          className="tool-btn"
+          onClick={undo}
+          disabled={disabled || undoStack.length === 0}
+          title="Undo (Ctrl+Z)"
+        >
+          ↩
+        </button>
+        <div className="tool-label">Undo</div>
+      </div>
+
+      {/* Redo */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          className="tool-btn"
+          onClick={redo}
+          disabled={disabled || redoStack.length === 0}
+          title="Redo (Ctrl+Y)"
+        >
+          ↪
+        </button>
+        <div className="tool-label">Redo</div>
+      </div>
+
+      <div className="tool-divider" />
+
+      {/* Clear */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         <button className="tool-btn" onClick={clearAll} disabled={disabled} title="Clear walls & objects">
           🧹
@@ -50,6 +105,7 @@ export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan
         <div className="tool-label">Clear</div>
       </div>
 
+      {/* Templates */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
         <button
           className={`tool-btn ${showTemplates ? "active" : ""}`}
@@ -63,15 +119,9 @@ export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan
 
         {showTemplates && (
           <div style={{
-            position: "absolute",
-            left: "56px",
-            top: 0,
-            background: "#1a1d2e",
-            border: "1px solid #2d3148",
-            borderRadius: 8,
-            padding: 8,
-            width: 200,
-            zIndex: 100,
+            position: "absolute", left: "56px", top: 0,
+            background: "#1a1d2e", border: "1px solid #2d3148",
+            borderRadius: 8, padding: 8, width: 200, zIndex: 100,
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, padding: "0 4px" }}>
@@ -82,16 +132,9 @@ export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan
                 key={t.id}
                 onClick={() => applyTemplate(t)}
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  width: "100%",
-                  padding: "8px 10px",
-                  background: "transparent",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "background 0.1s",
+                  display: "flex", flexDirection: "column", width: "100%",
+                  padding: "8px 10px", background: "transparent", border: "none",
+                  borderRadius: 6, cursor: "pointer", textAlign: "left", transition: "background 0.1s",
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = "#2d3148"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -103,6 +146,15 @@ export default function Toolbar({ activeTool, setActiveTool, disabled, floorPlan
           </div>
         )}
       </div>
+
+      {/* Room Settings */}
+      <RoomSettings
+        floorPlan={floorPlan}
+        setFloorPlan={setFloorPlan}
+        backgroundImage={backgroundImage}
+        setBackgroundImage={setBackgroundImage}
+        disabled={disabled}
+      />
     </>
   )
 }
