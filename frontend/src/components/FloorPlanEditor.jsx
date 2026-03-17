@@ -68,10 +68,15 @@ export default function FloorPlanEditor({
     setRedoStack([])
   }, [setUndoStack, setRedoStack])
 
-  const getPosFromCoords = useCallback((x, y) => {
-    const rect = canvasRef.current.getBoundingClientRect()
-    const rawX = x - rect.left
-    const rawY = y - rect.top
+  // Get canvas position accounting for CSS scaling
+  const getPosFromCoords = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current
+    const rect = canvas.getBoundingClientRect()
+    // Calculate scale ratio between CSS size and actual canvas pixel size
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const rawX = (clientX - rect.left) * scaleX
+    const rawY = (clientY - rect.top) * scaleY
     if (gridSnap === null) return { x: rawX, y: rawY }
     return snapPoint(rawX, rawY, floorPlan, gridSnap, scale)
   }, [floorPlan, gridSnap, scale])
@@ -180,7 +185,6 @@ export default function FloorPlanEditor({
 
   useEffect(() => { draw() }, [draw])
 
-  // ── Shared logic ──
   const handleStart = useCallback((pos) => {
     if (activeTool === "erase") {
       const mx = toMeters(pos.x, scale), my = toMeters(pos.y, scale)
@@ -217,7 +221,6 @@ export default function FloorPlanEditor({
     const x1=toMeters(startPt.x,scale), y1=toMeters(startPt.y,scale)
     const x2=toMeters(pos.x,scale), y2=toMeters(pos.y,scale)
     const r = v => Math.round(v * 100) / 100
-
     pushUndo(floorPlan)
 
     if (activeTool==="wall") {
@@ -240,31 +243,17 @@ export default function FloorPlanEditor({
     setStartPt(null); setMousePos(null); setSnapIndicator(null)
   }, [drawing, startPt, activeTool, floorPlan, setFloorPlan, pushUndo, scale])
 
-  // ── Mouse events ──
   const onMouseDown = useCallback((e) => { handleStart(getPos(e)) }, [handleStart, getPos])
   const onMouseMove = useCallback((e) => { if (drawing) handleMove(getPos(e)) }, [drawing, handleMove, getPos])
   const onMouseUp = useCallback((e) => { handleEnd(getPos(e)) }, [handleEnd, getPos])
 
-  // ── Touch events ──
-  const onTouchStart = useCallback((e) => {
-    e.preventDefault()
-    handleStart(getTouchPos(e))
-  }, [handleStart, getTouchPos])
-
-  const onTouchMove = useCallback((e) => {
-    e.preventDefault()
-    if (drawing) handleMove(getTouchPos(e))
-  }, [drawing, handleMove, getTouchPos])
-
-  const onTouchEnd = useCallback((e) => {
-    e.preventDefault()
-    handleEnd(getTouchPos(e))
-  }, [handleEnd, getTouchPos])
+  const onTouchStart = useCallback((e) => { e.preventDefault(); handleStart(getTouchPos(e)) }, [handleStart, getTouchPos])
+  const onTouchMove = useCallback((e) => { e.preventDefault(); if (drawing) handleMove(getTouchPos(e)) }, [drawing, handleMove, getTouchPos])
+  const onTouchEnd = useCallback((e) => { e.preventDefault(); handleEnd(getTouchPos(e)) }, [handleEnd, getTouchPos])
 
   return (
     <div style={{ position:"relative", display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
-      {/* Snap controls */}
-      <div style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 8px", background:"#1a1d2e", borderRadius:6, border:"1px solid #2d3148" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 8px", background:"#1a1d2e", borderRadius:6, border:"1px solid #2d3148", flexWrap:"wrap" }}>
         <span style={{ fontSize:11, color:"#64748b" }}>Snap:</span>
         {SNAP_OPTIONS.map(opt => (
           <button key={String(opt.value)} onClick={() => setGridSnap(opt.value)} style={{
@@ -277,7 +266,7 @@ export default function FloorPlanEditor({
         ))}
       </div>
 
-      <div style={{ position:"relative" }}>
+      <div style={{ position:"relative", width:"100%", maxWidth: W }}>
         <canvas
           ref={canvasRef}
           width={W}
@@ -289,10 +278,10 @@ export default function FloorPlanEditor({
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          style={{ cursor:"crosshair", borderRadius:4, touchAction:"none" }}
+          style={{ cursor:"crosshair", borderRadius:4, touchAction:"none", width:"100%", height:"auto" }}
         />
         <div className="canvas-hint">
-          {activeTool==="wall" && "Drag to draw walls · Yellow circle = snap to endpoint"}
+          {activeTool==="wall" && "Drag to draw walls"}
           {activeTool==="door" && "Drag to mark a doorway"}
           {activeTool==="obstacle" && "Drag to place a table or obstacle"}
           {activeTool==="spawn" && "Drag to set where people appear"}

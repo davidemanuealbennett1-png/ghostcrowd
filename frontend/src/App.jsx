@@ -8,24 +8,36 @@ import AuthModal from "./components/AuthModal"
 import SavedPlans from "./components/SavedPlans"
 import ShareButton from "./components/ShareButton"
 import PricingModal from "./components/PricingModal"
+import MobileLayout from "./components/MobileLayout"
 import { DEFAULT_PRESETS } from "./components/AgentTypeEditor"
 import { TEMPLATES } from "./utils/templates"
 import { supabase } from "./utils/supabase"
 import { generatePDFReport } from "./utils/pdfReport"
 import { usePlaybackRecorder } from "./utils/usePlaybackRecorder"
-import { useSubscription, TIER_LIMITS } from "./utils/useSubscription"
+import { useSubscription } from "./utils/useSubscription"
 import "./App.css"
 
 const DEFAULT_FLOOR_PLAN = TEMPLATES[0].floorPlan
 const WS_URL = import.meta.env.VITE_WS_URL || "wss://ghostcrowd-production.up.railway.app"
 
-// Check for upgrade success/cancel in URL
 function getUpgradeStatus() {
   const params = new URLSearchParams(window.location.search)
   return params.get('upgrade')
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
 export default function App() {
+  const isMobile = useIsMobile()
+
   const [activeTool, setActiveTool] = useState("wall")
   const [floorPlan, setFloorPlan] = useState(DEFAULT_FLOOR_PLAN)
   const [floorPlanName, setFloorPlanName] = useState("Untitled")
@@ -58,7 +70,7 @@ export default function App() {
   const { tier, limits, canUse } = useSubscription(user)
 
   const {
-    recording, playback, playbackFrame, playbackProgress,
+    playback, playbackFrame, playbackProgress,
     hasRecording, startRecording, recordFrame, stopRecording,
     startPlayback, stopPlayback, seekPlayback, frameCount,
   } = usePlaybackRecorder()
@@ -69,7 +81,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Clear upgrade status from URL
   useEffect(() => {
     if (upgradeStatus) {
       window.history.replaceState({}, '', '/app')
@@ -126,9 +137,7 @@ export default function App() {
   }, [])
 
   const startSimulation = useCallback(() => {
-    // Enforce agent limit based on tier
     const cappedAgents = Math.min(agentCount, limits.agents)
-
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
     setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
@@ -139,15 +148,11 @@ export default function App() {
     wsRef.current = ws
 
     ws.onopen = () => ws.send(JSON.stringify({
-      agent_count: cappedAgents,
-      floor_plan: floorPlan,
-      dt: 0.05,
-      steps_per_frame: 3,
-      max_steps: 3000,
+      agent_count: cappedAgents, floor_plan: floorPlan,
+      dt: 0.05, steps_per_frame: 3, max_steps: 3000,
       sim_speed: simSpeed,
       spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
-      panic_mode: false,
-      custom_agent_types: agentTypes,
+      panic_mode: false, custom_agent_types: agentTypes,
     }))
 
     ws.onmessage = (event) => {
@@ -193,9 +198,7 @@ export default function App() {
   const exportPDF = useCallback(async () => {
     if (!canUse('pdf')) { setShowPricing(true); return }
     const canvas = document.querySelector("canvas")
-    await generatePDFReport({
-      floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canvasElement: canvas,
-    })
+    await generatePDFReport({ floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canvasElement: canvas })
   }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canUse])
 
   const saveFloorPlan = useCallback(async () => {
@@ -220,18 +223,86 @@ export default function App() {
   const isDone = simulationState === "done"
   const activeFrame = playback ? playbackFrame : currentFrame
 
+  const canvas = isSimulating || isDone ? (
+    <SimulationView
+      floorPlan={floorPlan} frame={activeFrame}
+      heatMap={showHeatMap ? heatMap : null}
+      bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
+      isDone={isDone && !playback} agentTypes={agentTypes}
+    />
+  ) : (
+    <FloorPlanEditor
+      floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+      activeTool={activeTool} setActiveTool={setActiveTool}
+      undoStack={undoStack} setUndoStack={setUndoStack}
+      redoStack={redoStack} setRedoStack={setRedoStack}
+      backgroundImage={backgroundImage}
+    />
+  )
+
+  const playbackBar = isDone && hasRecording ? (
+    <div style={{
+      background: '#1a1d2e', borderTop: '1px solid #2d3148',
+      padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+    }}>
+      {!playback ? (
+        <button onClick={() => startPlayback(simSpeed)} style={{
+          padding: '5px 12px', background: '#3730a3', border: '1px solid #6366f1',
+          borderRadius: 6, color: 'white', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>▶ Replay</button>
+      ) : (
+        <button onClick={stopPlayback} style={{
+          padding: '5px 12px', background: '#1e2235', border: '1px solid #2d3148',
+          borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>⏹ Stop</button>
+      )}
+      <input type="range" min={0} max={100} value={playbackProgress}
+        onChange={e => seekPlayback(Number(e.target.value))}
+        style={{ flex: 1, accentColor: '#6366f1' }} />
+      <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{frameCount}f</span>
+    </div>
+  ) : null
+
+  const sharedProps = {
+    activeTool, setActiveTool,
+    floorPlan, agentCount, setAgentCount,
+    isSimulating, isDone,
+    onStart: startSimulation, onStop: stopSimulation, onReset: resetAll,
+    currentFrame: activeFrame,
+    user, onSignIn: () => setShowAuthModal(true), onSignOut: signOut,
+    onSave: saveFloorPlan, saveStatus,
+    onShare: () => {},
+    onUpgrade: () => setShowPricing(true), tier,
+    onExport: exportHeatMap, onExportPDF: exportPDF,
+    heatMap, showHeatMap, setShowHeatMap,
+    bottlenecks, showBottlenecks, setShowBottlenecks,
+    panicMode, onTriggerPanic: handleTriggerPanic, onCalmDown: handleCalmDown,
+    simSpeed, setSimSpeed,
+    results,
+    playbackBar,
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileLayout {...sharedProps}>
+          {canvas}
+        </MobileLayout>
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
+        {showPricing && <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)} onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />}
+      </>
+    )
+  }
+
+  // ── Desktop layout ──
   return (
     <div className="app">
-      {/* Upgrade notification */}
       {upgradeStatus === 'success' && (
         <div style={{
           position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
           background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
-          borderRadius: 8, padding: '10px 20px', zIndex: 200,
-          fontSize: 13, color: '#4ade80',
-        }}>
-          🎉 Upgrade successful! Welcome to {tier}.
-        </div>
+          borderRadius: 8, padding: '10px 20px', zIndex: 200, fontSize: 13, color: '#4ade80',
+        }}>🎉 Upgrade successful! Welcome to {tier}.</div>
       )}
 
       <header className="app-header">
@@ -250,15 +321,8 @@ export default function App() {
               {user && <button className="header-btn" onClick={() => setShowSavedPlans(true)}>📁 My Plans</button>}
             </>
           )}
-          {/* Tier badge */}
-          <button
-            className="header-btn"
-            onClick={() => setShowPricing(true)}
-            style={{
-              borderColor: tier === 'pro' || tier === 'max' ? 'rgba(99,102,241,0.5)' : '#2d3148',
-              color: tier === 'pro' || tier === 'max' ? '#a5b4fc' : '#64748b',
-            }}
-          >
+          <button className="header-btn" onClick={() => setShowPricing(true)}
+            style={{ borderColor: tier !== 'free' ? 'rgba(99,102,241,0.5)' : '#2d3148', color: tier !== 'free' ? '#a5b4fc' : '#64748b' }}>
             {tier === 'free' ? '⬆ Upgrade' : `✨ ${tier.charAt(0).toUpperCase() + tier.slice(1)}`}
           </button>
           {user ? (
@@ -282,48 +346,8 @@ export default function App() {
         </aside>
 
         <main className="canvas-area" style={{ flexDirection: 'column', gap: 0 }}>
-          {isSimulating || isDone ? (
-            <SimulationView
-              floorPlan={floorPlan} frame={activeFrame}
-              heatMap={showHeatMap ? heatMap : null}
-              bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
-              isDone={isDone && !playback}
-              agentTypes={agentTypes}
-            />
-          ) : (
-            <FloorPlanEditor
-              floorPlan={floorPlan} setFloorPlan={setFloorPlan}
-              activeTool={activeTool} setActiveTool={setActiveTool}
-              undoStack={undoStack} setUndoStack={setUndoStack}
-              redoStack={redoStack} setRedoStack={setRedoStack}
-              backgroundImage={backgroundImage}
-            />
-          )}
-
-          {isDone && hasRecording && (
-            <div style={{
-              background: '#1a1d2e', borderTop: '1px solid #2d3148',
-              padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-            }}>
-              {!playback ? (
-                <button onClick={() => startPlayback(simSpeed)} style={{
-                  padding: '5px 12px', background: '#3730a3', border: '1px solid #6366f1',
-                  borderRadius: 6, color: 'white', fontSize: 12, cursor: 'pointer',
-                }}>▶ Replay</button>
-              ) : (
-                <button onClick={stopPlayback} style={{
-                  padding: '5px 12px', background: '#1e2235', border: '1px solid #2d3148',
-                  borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer',
-                }}>⏹ Stop</button>
-              )}
-              <input type="range" min={0} max={100} value={playbackProgress}
-                onChange={e => seekPlayback(Number(e.target.value))}
-                style={{ flex: 1, accentColor: '#6366f1' }} />
-              <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
-                {Math.round(playbackProgress)}% · {frameCount} frames
-              </span>
-            </div>
-          )}
+          {canvas}
+          {playbackBar}
         </main>
 
         <aside className="sidebar-right">
@@ -341,11 +365,8 @@ export default function App() {
             spawnSchedule={spawnSchedule} setSpawnSchedule={setSpawnSchedule}
             floorPlan={floorPlan} setFloorPlan={setFloorPlan}
             onSpeedChange={handleSpeedChange}
-            panicMode={panicMode}
-            onTriggerPanic={handleTriggerPanic}
-            onCalmDown={handleCalmDown}
-            tier={tier} limits={limits}
-            onUpgrade={() => setShowPricing(true)}
+            panicMode={panicMode} onTriggerPanic={handleTriggerPanic} onCalmDown={handleCalmDown}
+            tier={tier} limits={limits} onUpgrade={() => setShowPricing(true)}
           />
           {isDone && results && <ResultsPanel results={results} />}
         </aside>
@@ -358,12 +379,8 @@ export default function App() {
           onClose={() => setShowSavedPlans(false)} />
       )}
       {showPricing && (
-        <PricingModal
-          user={user}
-          currentTier={tier}
-          onClose={() => setShowPricing(false)}
-          onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }}
-        />
+        <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)}
+          onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />
       )}
     </div>
   )
