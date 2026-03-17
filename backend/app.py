@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from simulation.engine import SimulationEngine
 from simulation.environment import Environment
 from simulation.analytics import Analytics
+from simulation.agent import Agent
 
 app = FastAPI(title="GhostCrowd Simulation API")
 
@@ -18,6 +19,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
 
 
 def build_environment(floor_plan: dict) -> Environment:
@@ -52,7 +58,7 @@ async def simulate(websocket: WebSocket):
     try:
         raw = await websocket.receive_text()
         config = json.loads(raw)
-        print(f"[simulate] config received: agent_count={config.get('agent_count')}, agent_types={config.get('agent_types')}")
+        print(f"[simulate] config received: agent_count={config.get('agent_count')}")
 
         agent_count = min(int(config.get("agent_count", 50)), 500)
         floor_plan = config.get("floor_plan", {})
@@ -62,22 +68,72 @@ async def simulate(websocket: WebSocket):
         sim_speed = float(config.get("sim_speed", 1.0))
         spawn_schedule = config.get("spawn_schedule", None)
         panic_mode = bool(config.get("panic_mode", False))
-        agent_types = config.get("agent_types", {"customer": 1.0})
 
-        print(f"[simulate] building environment {floor_plan.get('width')}x{floor_plan.get('height')}")
+        # Custom agent type definitions from frontend
+        # Format: [{ id, name, color, speedMin, speedMax, proportion }, ...]
+        custom_agent_types = config.get("custom_agent_types", None)
+
         env = build_environment(floor_plan)
         sim = SimulationEngine(env, dt=dt, panic=panic_mode)
         analytics = Analytics(env.width, env.height, grid_resolution=1.0)
+
+        # Build spawn function based on custom types
+        def spawn_custom(count):
+            if not custom_agent_types:
+                sim.spawn_agents(count)
+                return
+
+            active = [t for t in custom_agent_types if t.get("proportion", 0) > 0]
+            if not active:
+                sim.spawn_agents(count)
+                return
+
+            total = sum(t["proportion"] for t in active)
+            weights = np.array([t["proportion"] / total for t in active])
+            type_ids = [t["id"] for t in active]
+
+            for _ in range(count):
+                pos = env.random_spawn_position()
+                dest = env.random_exit_position()
+                chosen_idx = np.random.choice(len(type_ids), p=weights)
+                chosen = active[chosen_idx]
+
+                speed_min = float(chosen.get("speedMin", 1.0))
+                speed_max = float(chosen.get("speedMax", 1.5))
+                color_hex = chosen.get("color", "#a78bfa")
+                color_rgb = hex_to_rgb(color_hex)
+
+                agent = Agent.__new__(Agent)
+                agent.id = len(sim.agents)
+                agent.position = np.array(pos, dtype=float)
+                agent.destination = np.array(dest, dtype=float)
+                agent.agent_type = chosen["id"]
+                agent.panic = panic_mode
+                agent.desired_speed = np.random.uniform(speed_min, speed_max)
+                if panic_mode:
+                    agent.desired_speed *= 2.5
+                agent.velocity = np.zeros(2)
+                agent.radius = 0.3
+                agent.mass = 75.0
+                agent.color = color_rgb
+                agent.reached_destination = False
+
+                direction = agent.destination - agent.position
+                dist = np.linalg.norm(direction)
+                if dist > 0:
+                    agent.velocity = (direction / dist) * agent.desired_speed * 0.1
+
+                sim.agents.append(agent)
 
         if spawn_schedule:
             spawned = 0
             spawn_queue = 0.0
         else:
-            sim.spawn_agents(agent_count, agent_type_distribution=agent_types)
+            spawn_custom(agent_count)
             spawned = agent_count
             spawn_queue = 0.0
 
-        print(f"[simulate] spawned {spawned} agents, starting simulation loop")
+        print(f"[simulate] spawned {spawned} agents, starting loop")
 
         await websocket.send_json({
             "type": "init",
@@ -113,7 +169,7 @@ async def simulate(websocket: WebSocket):
                 spawn_queue += rate * dt * steps_per_frame
                 to_spawn = min(int(spawn_queue), agent_count - spawned)
                 if to_spawn > 0:
-                    sim.spawn_agents(to_spawn, agent_type_distribution=agent_types)
+                    spawn_custom(to_spawn)
                     spawned += to_spawn
                     spawn_queue -= to_spawn
 
@@ -129,7 +185,7 @@ async def simulate(websocket: WebSocket):
             if state["active_count"] == 0 and spawned >= agent_count:
                 break
 
-        print(f"[simulate] simulation complete after {step} steps")
+        print(f"[simulate] complete after {step} steps")
         summary = analytics.get_summary(sim.agents)
         heat_map = analytics.get_normalized_heat_map()
         bottlenecks = analytics.get_bottlenecks(threshold=0.6)

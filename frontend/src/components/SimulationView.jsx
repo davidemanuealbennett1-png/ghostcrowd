@@ -3,14 +3,12 @@ import { useRef, useEffect } from "react"
 const GRID_SIZE = 30
 function toPx(m) { return m * GRID_SIZE }
 
-const TYPE_COLORS = {
-  customer: [167, 139, 250],
-  staff: [52, 211, 153],
-  child: [251, 191, 36],
-  elderly: [148, 163, 184],
+function hexToRgb(hex) {
+  const h = hex.replace('#', '')
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
 }
 
-export default function SimulationView({ floorPlan, frame, heatMap, isDone, bottlenecks }) {
+export default function SimulationView({ floorPlan, frame, heatMap, isDone, bottlenecks, agentTypes }) {
   const canvasRef = useRef(null)
   const W = toPx(floorPlan.width)
   const H = toPx(floorPlan.height)
@@ -20,6 +18,21 @@ export default function SimulationView({ floorPlan, frame, heatMap, isDone, bott
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     ctx.clearRect(0, 0, W, H)
+
+    // Build color map from agentTypes prop
+    const colorMap = {}
+    if (agentTypes) {
+      for (const t of agentTypes) {
+        colorMap[t.id] = hexToRgb(t.color)
+      }
+    }
+    // Fallback defaults
+    const DEFAULT_COLORS = {
+      customer: [167, 139, 250],
+      staff: [52, 211, 153],
+      child: [251, 191, 36],
+      elderly: [148, 163, 184],
+    }
 
     ctx.fillStyle = "#161929"
     ctx.fillRect(0, 0, W, H)
@@ -50,57 +63,53 @@ export default function SimulationView({ floorPlan, frame, heatMap, isDone, bott
 
     // Spawn zones
     for (const z of floorPlan.spawn_zones) {
-      ctx.fillStyle = "rgba(74,222,128,0.1)"; ctx.strokeStyle = "rgba(74,222,128,0.4)"; ctx.lineWidth = 1
+      ctx.fillStyle="rgba(74,222,128,0.1)"; ctx.strokeStyle="rgba(74,222,128,0.4)"; ctx.lineWidth=1
       ctx.fillRect(toPx(z.x), toPx(z.y), toPx(z.w), toPx(z.h))
       ctx.strokeRect(toPx(z.x), toPx(z.y), toPx(z.w), toPx(z.h))
     }
 
     // Exit zones
     for (const z of floorPlan.exit_zones) {
-      ctx.fillStyle = "rgba(248,113,113,0.1)"; ctx.strokeStyle = "rgba(248,113,113,0.4)"; ctx.lineWidth = 1
+      ctx.fillStyle="rgba(248,113,113,0.1)"; ctx.strokeStyle="rgba(248,113,113,0.4)"; ctx.lineWidth=1
       ctx.fillRect(toPx(z.x), toPx(z.y), toPx(z.w), toPx(z.h))
       ctx.strokeRect(toPx(z.x), toPx(z.y), toPx(z.w), toPx(z.h))
     }
 
     // Obstacles
     for (const o of floorPlan.obstacles) {
-      ctx.fillStyle = "rgba(100,116,139,0.5)"; ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 2
+      ctx.fillStyle="rgba(100,116,139,0.5)"; ctx.strokeStyle="#94a3b8"; ctx.lineWidth=2
       ctx.fillRect(toPx(o.x), toPx(o.y), toPx(o.width), toPx(o.height))
       ctx.strokeRect(toPx(o.x), toPx(o.y), toPx(o.width), toPx(o.height))
     }
 
     // Walls
-    ctx.strokeStyle = "#60a5fa"; ctx.lineWidth = 3; ctx.lineCap = "round"
+    ctx.strokeStyle="#60a5fa"; ctx.lineWidth=3; ctx.lineCap="round"
     for (const w of floorPlan.walls) {
       ctx.beginPath(); ctx.moveTo(toPx(w.x1), toPx(w.y1)); ctx.lineTo(toPx(w.x2), toPx(w.y2)); ctx.stroke()
     }
 
     // Boundary
-    ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 2
+    ctx.strokeStyle="#3b82f6"; ctx.lineWidth=2
     ctx.strokeRect(1, 1, W-2, H-2)
 
     // Bottleneck markers
-    if (bottlenecks && bottlenecks.length > 0) {
+    if (bottlenecks?.length > 0) {
       for (const b of bottlenecks) {
-        const bx = toPx(b.x) + GRID_SIZE/2, by = toPx(b.y) + GRID_SIZE/2
-        ctx.beginPath()
-        ctx.arc(bx, by, 10 + b.intensity*10, 0, Math.PI*2)
-        ctx.strokeStyle = `rgba(251,191,36,${0.5+b.intensity*0.5})`
-        ctx.lineWidth = 2; ctx.stroke()
-        ctx.fillStyle = "rgba(251,191,36,0.9)"
-        ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"
-        ctx.fillText("!", bx, by+4); ctx.textAlign = "left"
+        const bx = toPx(b.x)+GRID_SIZE/2, by = toPx(b.y)+GRID_SIZE/2
+        ctx.beginPath(); ctx.arc(bx, by, 10+b.intensity*10, 0, Math.PI*2)
+        ctx.strokeStyle=`rgba(251,191,36,${0.5+b.intensity*0.5})`; ctx.lineWidth=2; ctx.stroke()
+        ctx.fillStyle="rgba(251,191,36,0.9)"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"
+        ctx.fillText("!", bx, by+4); ctx.textAlign="left"
       }
     }
 
     // Panic overlay
     if (frame?.panic) {
-      ctx.fillStyle = "rgba(220,38,38,0.06)"
-      ctx.fillRect(0, 0, W, H)
+      ctx.fillStyle="rgba(220,38,38,0.06)"; ctx.fillRect(0,0,W,H)
     }
 
     // Agents
-    if (frame && frame.agents) {
+    if (frame?.agents) {
       const densityMap = {}
       for (const agent of frame.agents) {
         if (agent.reached) continue
@@ -113,49 +122,40 @@ export default function SimulationView({ floorPlan, frame, heatMap, isDone, bott
         if (agent.reached) continue
         const ax = toPx(agent.x), ay = toPx(agent.y)
 
-        // Get base color from agent type
-        const baseColor = TYPE_COLORS[agent.type] || TYPE_COLORS.customer
+        // Get color: prefer agent.color from backend, then colorMap lookup, then defaults
+        let baseColor = agent.color ||
+          colorMap[agent.type] ||
+          DEFAULT_COLORS[agent.type] ||
+          [167, 139, 250]
+
         const density = (densityMap[`${Math.floor(agent.x)},${Math.floor(agent.y)}`] || 1) / maxDensity
+        let r2 = Math.floor(baseColor[0] * (1-density*0.6) + 248*density*0.6)
+        let g2 = Math.floor(baseColor[1] * (1-density*0.6) + 113*density*0.6)
+        let b2 = Math.floor(baseColor[2] * (1-density*0.6) + 113*density*0.6)
 
-        // Blend toward red as density increases
-        let r2 = Math.floor(baseColor[0] * (1 - density * 0.6) + 248 * density * 0.6)
-        let g2 = Math.floor(baseColor[1] * (1 - density * 0.6) + 113 * density * 0.6)
-        let b2 = Math.floor(baseColor[2] * (1 - density * 0.6) + 113 * density * 0.6)
+        if (agent.panic) { r2=Math.min(255,r2+80); g2=Math.max(0,g2-40); b2=Math.max(0,b2-40) }
 
-        // Panic tint
-        if (agent.panic) {
-          r2 = Math.min(255, r2 + 80)
-          g2 = Math.max(0, g2 - 40)
-          b2 = Math.max(0, b2 - 40)
-        }
-
-        const agentRadius = agent.type === 'child' ? 3 : 5
         ctx.beginPath()
-        ctx.arc(ax, ay, agentRadius, 0, Math.PI*2)
-        ctx.fillStyle = `rgb(${r2},${g2},${b2})`
+        ctx.arc(ax, ay, 5, 0, Math.PI*2)
+        ctx.fillStyle=`rgb(${r2},${g2},${b2})`
         ctx.fill()
 
-        // Velocity arrow
         const speed = Math.hypot(agent.vx, agent.vy)
         if (speed > 0.1) {
           ctx.beginPath(); ctx.moveTo(ax, ay)
-          ctx.lineTo(ax + agent.vx * 5, ay + agent.vy * 5)
-          ctx.strokeStyle = `rgba(${r2},${g2},${b2},0.4)`
-          ctx.lineWidth = 1; ctx.stroke()
+          ctx.lineTo(ax+agent.vx*5, ay+agent.vy*5)
+          ctx.strokeStyle=`rgba(${r2},${g2},${b2},0.4)`; ctx.lineWidth=1; ctx.stroke()
         }
       }
     }
 
-    // Done overlay
     if (isDone && !heatMap) {
-      ctx.fillStyle = "rgba(0,0,0,0.35)"
-      ctx.fillRect(0, 0, W, H)
-      ctx.fillStyle = "#a78bfa"
-      ctx.font = "bold 15px sans-serif"; ctx.textAlign = "center"
+      ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(0,0,W,H)
+      ctx.fillStyle="#a78bfa"; ctx.font="bold 15px sans-serif"; ctx.textAlign="center"
       ctx.fillText("Done — toggle Heat Map or click Back to Editor", W/2, H/2)
-      ctx.textAlign = "left"
+      ctx.textAlign="left"
     }
-  }, [frame, heatMap, bottlenecks, floorPlan, isDone, W, H])
+  }, [frame, heatMap, bottlenecks, floorPlan, isDone, W, H, agentTypes])
 
   return <canvas ref={canvasRef} width={W} height={H} style={{ borderRadius: 4 }} />
 }

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { TEMPLATES } from "../utils/templates"
 import RoomSettings from "./RoomSettings"
+import AgentTypeEditor from "./AgentTypeEditor"
 
 const TOOLS = [
   { id: "wall", icon: "📏", label: "Wall" },
@@ -17,6 +18,7 @@ export default function Toolbar({
   floorPlan, setFloorPlan,
   undoStack, setUndoStack, redoStack, setRedoStack,
   backgroundImage, setBackgroundImage,
+  agentTypes, setAgentTypes,
 }) {
   const [showTemplates, setShowTemplates] = useState(false)
 
@@ -69,39 +71,20 @@ export default function Toolbar({
 
       <div className="tool-divider" />
 
-      {/* Undo */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <button
-          className="tool-btn"
-          onClick={undo}
-          disabled={disabled || undoStack.length === 0}
-          title="Undo (Ctrl+Z)"
-        >
-          ↩
-        </button>
+        <button className="tool-btn" onClick={undo} disabled={disabled || undoStack.length === 0} title="Undo (Ctrl+Z)">↩</button>
         <div className="tool-label">Undo</div>
       </div>
 
-      {/* Redo */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <button
-          className="tool-btn"
-          onClick={redo}
-          disabled={disabled || redoStack.length === 0}
-          title="Redo (Ctrl+Y)"
-        >
-          ↪
-        </button>
+        <button className="tool-btn" onClick={redo} disabled={disabled || redoStack.length === 0} title="Redo (Ctrl+Y)">↪</button>
         <div className="tool-label">Redo</div>
       </div>
 
       <div className="tool-divider" />
 
-      {/* Clear */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <button className="tool-btn" onClick={clearAll} disabled={disabled} title="Clear walls & objects">
-          🧹
-        </button>
+        <button className="tool-btn" onClick={clearAll} disabled={disabled} title="Clear walls & objects">🧹</button>
         <div className="tool-label">Clear</div>
       </div>
 
@@ -112,9 +95,7 @@ export default function Toolbar({
           onClick={() => setShowTemplates(v => !v)}
           disabled={disabled}
           title="Load a template"
-        >
-          📐
-        </button>
+        >📐</button>
         <div className="tool-label">Template</div>
 
         {showTemplates && (
@@ -128,14 +109,11 @@ export default function Toolbar({
               Templates
             </div>
             {TEMPLATES.map(t => (
-              <button
-                key={t.id}
-                onClick={() => applyTemplate(t)}
-                style={{
-                  display: "flex", flexDirection: "column", width: "100%",
-                  padding: "8px 10px", background: "transparent", border: "none",
-                  borderRadius: 6, cursor: "pointer", textAlign: "left", transition: "background 0.1s",
-                }}
+              <button key={t.id} onClick={() => applyTemplate(t)} style={{
+                display: "flex", flexDirection: "column", width: "100%",
+                padding: "8px 10px", background: "transparent", border: "none",
+                borderRadius: 6, cursor: "pointer", textAlign: "left",
+              }}
                 onMouseEnter={e => e.currentTarget.style.background = "#2d3148"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
@@ -146,6 +124,13 @@ export default function Toolbar({
           </div>
         )}
       </div>
+
+      {/* Agent type editor */}
+      <AgentTypeEditor
+        agentTypes={agentTypes}
+        setAgentTypes={setAgentTypes}
+        disabled={disabled}
+      />
 
       {/* Room Settings */}
       <RoomSettings

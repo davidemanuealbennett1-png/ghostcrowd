@@ -7,6 +7,7 @@ import ResultsPanel from "./components/ResultsPanel"
 import AuthModal from "./components/AuthModal"
 import SavedPlans from "./components/SavedPlans"
 import ShareButton from "./components/ShareButton"
+import { DEFAULT_PRESETS } from "./components/AgentTypeEditor"
 import { TEMPLATES } from "./utils/templates"
 import { supabase } from "./utils/supabase"
 import "./App.css"
@@ -30,13 +31,10 @@ export default function App() {
   const [undoStack, setUndoStack] = useState([])
   const [redoStack, setRedoStack] = useState([])
 
-  // Batch 2
   const [simSpeed, setSimSpeed] = useState(1.0)
   const [spawnMode, setSpawnMode] = useState('instant')
   const [spawnSchedule, setSpawnSchedule] = useState([])
-
-  // Batch 3
-  const [agentTypes, setAgentTypes] = useState({ customer: 1.0, staff: 0.0, child: 0.0, elderly: 0.0 })
+  const [agentTypes, setAgentTypes] = useState(DEFAULT_PRESETS)
   const [panicMode, setPanicMode] = useState(false)
 
   const wsRef = useRef(null)
@@ -58,14 +56,14 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSim) {
         e.preventDefault()
         if (undoStack.length === 0) return
-        const prev = undoStack[undoStack.length-1]
-        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0,-1)); setFloorPlan(prev)
+        const prev = undoStack[undoStack.length - 1]
+        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0, -1)); setFloorPlan(prev)
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSim) {
         e.preventDefault()
         if (redoStack.length === 0) return
-        const next = redoStack[redoStack.length-1]
-        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0,-1)); setFloorPlan(next)
+        const next = redoStack[redoStack.length - 1]
+        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0, -1)); setFloorPlan(next)
       }
       if (!isSim) {
         if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
@@ -99,17 +97,6 @@ export default function App() {
     }
   }, [])
 
-  // Normalize agent types so they sum to 1
-  const getNormalizedAgentTypes = useCallback(() => {
-    const total = Object.values(agentTypes).reduce((a, b) => a + b, 0)
-    if (total === 0) return { customer: 1.0 }
-    const normalized = {}
-    for (const [k, v] of Object.entries(agentTypes)) {
-      if (v > 0) normalized[k] = v / total
-    }
-    return normalized
-  }, [agentTypes])
-
   const startSimulation = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
@@ -127,8 +114,8 @@ export default function App() {
       max_steps: 3000,
       sim_speed: simSpeed,
       spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
-      agent_types: getNormalizedAgentTypes(),
       panic_mode: false,
+      custom_agent_types: agentTypes,
     }))
 
     ws.onmessage = (event) => {
@@ -146,7 +133,7 @@ export default function App() {
 
     ws.onerror = () => setSimulationState(null)
     ws.onclose = () => {}
-  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, getNormalizedAgentTypes])
+  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, agentTypes])
 
   const stopSimulation = useCallback(() => {
     if (wsRef.current) {
@@ -166,7 +153,7 @@ export default function App() {
     const canvas = document.querySelector("canvas")
     if (!canvas) return
     const link = document.createElement("a")
-    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g,'-')}.png`
+    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
     link.href = canvas.toDataURL("image/png"); link.click()
   }, [floorPlanName])
 
@@ -225,6 +212,7 @@ export default function App() {
             undoStack={undoStack} setUndoStack={setUndoStack}
             redoStack={redoStack} setRedoStack={setRedoStack}
             backgroundImage={backgroundImage} setBackgroundImage={setBackgroundImage}
+            agentTypes={agentTypes} setAgentTypes={setAgentTypes}
           />
         </aside>
 
@@ -235,6 +223,7 @@ export default function App() {
               heatMap={showHeatMap ? heatMap : null}
               bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
               isDone={isDone}
+              agentTypes={agentTypes}
             />
           ) : (
             <FloorPlanEditor
@@ -262,7 +251,6 @@ export default function App() {
             spawnSchedule={spawnSchedule} setSpawnSchedule={setSpawnSchedule}
             floorPlan={floorPlan} setFloorPlan={setFloorPlan}
             onSpeedChange={handleSpeedChange}
-            agentTypes={agentTypes} setAgentTypes={setAgentTypes}
             panicMode={panicMode}
             onTriggerPanic={handleTriggerPanic}
             onCalmDown={handleCalmDown}
