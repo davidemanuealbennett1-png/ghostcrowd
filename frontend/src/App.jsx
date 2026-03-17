@@ -6,6 +6,7 @@ import ControlPanel from "./components/ControlPanel"
 import ResultsPanel from "./components/ResultsPanel"
 import AuthModal from "./components/AuthModal"
 import SavedPlans from "./components/SavedPlans"
+import ShareButton from "./components/ShareButton"
 import { TEMPLATES } from "./utils/templates"
 import { supabase } from "./utils/supabase"
 import "./App.css"
@@ -27,11 +28,10 @@ export default function App() {
   const [showBottlenecks, setShowBottlenecks] = useState(true)
   const wsRef = useRef(null)
 
-  // Auth state
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
-  const [saveStatus, setSaveStatus] = useState(null) // null | 'saving' | 'saved' | 'error'
+  const [saveStatus, setSaveStatus] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -153,7 +153,6 @@ export default function App() {
       <header className="app-header">
         <div className="logo">👻 GhostCrowd</div>
 
-        {/* Floor plan name (editable) */}
         {!isSimulating && !isDone && (
           <input
             className="plan-name-input"
@@ -172,8 +171,14 @@ export default function App() {
               <button className="header-btn" onClick={saveFloorPlan} title="Save floor plan">
                 {saveStatus === 'saving' ? '...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '✗ Error' : '💾 Save'}
               </button>
+              <ShareButton
+                user={user}
+                floorPlan={floorPlan}
+                floorPlanName={floorPlanName}
+                onRequestAuth={() => setShowAuthModal(true)}
+              />
               {user && (
-                <button className="header-btn" onClick={() => setShowSavedPlans(true)} title="Open saved plans">
+                <button className="header-btn" onClick={() => setShowSavedPlans(true)}>
                   📁 My Plans
                 </button>
               )}
@@ -235,9 +240,7 @@ export default function App() {
             heatMap={heatMap}
             bottlenecks={bottlenecks}
           />
-          {isDone && results && (
-            <ResultsPanel results={results} />
-          )}
+          {isDone && results && <ResultsPanel results={results} />}
         </aside>
       </div>
 
