@@ -576,4 +576,14 @@ canvas {
     height: 50vh;
     overflow: auto;
   }
+
+  .canvas-area canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+
+  .canvas-area > div {
+    max-width: 100%;
+    overflow: hidden;
+  }
 }
