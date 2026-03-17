@@ -8,6 +8,13 @@ const SPEED_OPTIONS = [
   { label: '4×', value: 4.0 },
 ]
 
+const AGENT_TYPE_COLORS = {
+  customer: '#a78bfa',
+  staff: '#34d399',
+  child: '#fbbf24',
+  elderly: '#94a3b8',
+}
+
 export default function ControlPanel({
   agentCount, setAgentCount,
   isSimulating, isDone,
@@ -21,39 +28,35 @@ export default function ControlPanel({
   spawnSchedule, setSpawnSchedule,
   floorPlan, setFloorPlan,
   onSpeedChange,
+  agentTypes, setAgentTypes,
+  panicMode, onTriggerPanic, onCalmDown,
 }) {
   const [showZoneWeights, setShowZoneWeights] = useState(false)
-  const [showSchedule, setShowSchedule] = useState(false)
+  const [showAgentTypes, setShowAgentTypes] = useState(false)
 
   const updateSpawnWeight = (idx, weight) => {
-    setFloorPlan(fp => ({
-      ...fp,
-      spawn_zones: fp.spawn_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z)
-    }))
+    setFloorPlan(fp => ({ ...fp, spawn_zones: fp.spawn_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z) }))
   }
-
   const updateExitWeight = (idx, weight) => {
-    setFloorPlan(fp => ({
-      ...fp,
-      exit_zones: fp.exit_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z)
-    }))
+    setFloorPlan(fp => ({ ...fp, exit_zones: fp.exit_zones.map((z, i) => i === idx ? { ...z, weight: Number(weight) } : z) }))
   }
 
   const addScheduleEntry = () => {
-    const lastTime = spawnSchedule.length > 0 ? spawnSchedule[spawnSchedule.length - 1].time + 30 : 0
+    const lastTime = spawnSchedule.length > 0 ? spawnSchedule[spawnSchedule.length-1].time + 30 : 0
     setSpawnSchedule([...spawnSchedule, { time: lastTime, rate: 2 }])
   }
+  const removeScheduleEntry = (idx) => setSpawnSchedule(spawnSchedule.filter((_, i) => i !== idx))
+  const updateScheduleEntry = (idx, field, val) => setSpawnSchedule(spawnSchedule.map((e, i) => i === idx ? { ...e, [field]: Number(val) } : e))
 
-  const removeScheduleEntry = (idx) => {
-    setSpawnSchedule(spawnSchedule.filter((_, i) => i !== idx))
+  const updateAgentType = (type, pct) => {
+    setAgentTypes(prev => ({ ...prev, [type]: Number(pct) }))
   }
 
-  const updateScheduleEntry = (idx, field, val) => {
-    setSpawnSchedule(spawnSchedule.map((e, i) => i === idx ? { ...e, [field]: Number(val) } : e))
-  }
+  const totalPct = Object.values(agentTypes).reduce((a, b) => a + b, 0)
 
   return (
     <div className="control-panel">
+
       {/* Agent count */}
       <div className="control-section">
         <div className="control-label">Agents</div>
@@ -65,25 +68,48 @@ export default function ControlPanel({
         </div>
       </div>
 
+      {/* Agent types */}
+      {!isSimulating && !isDone && (
+        <div className="control-section">
+          <button onClick={() => setShowAgentTypes(v => !v)}
+            style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+            {showAgentTypes ? '▾' : '▸'} Agent types
+          </button>
+          {showAgentTypes && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>
+                Set mix of agent types. Total: {totalPct.toFixed(1)} (should sum to ~1)
+              </div>
+              {Object.entries(agentTypes).map(([type, val]) => (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: AGENT_TYPE_COLORS[type], width: 52, textTransform: 'capitalize' }}>{type}</span>
+                  <input type="range" min={0} max={1} step={0.05} value={val}
+                    onChange={e => updateAgentType(type, e.target.value)}
+                    style={{ flex: 1, accentColor: AGENT_TYPE_COLORS[type] }} />
+                  <span style={{ fontSize: 11, color: '#64748b', width: 28 }}>{Math.round(val*100)}%</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 10, color: '#475569' }}>
+                🟣 Customer &nbsp; 🟢 Staff &nbsp; 🟡 Child &nbsp; ⚪ Elderly
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Spawn mode */}
       {!isSimulating && !isDone && (
         <div className="control-section">
           <div className="control-label">Spawn Mode</div>
           <div style={{ display: 'flex', gap: 6 }}>
             {['instant', 'gradual'].map(mode => (
-              <button
-                key={mode}
-                onClick={() => setSpawnMode(mode)}
-                style={{
-                  flex: 1, padding: '6px', borderRadius: 6, border: '1px solid',
-                  borderColor: spawnMode === mode ? '#6366f1' : '#2d3148',
-                  background: spawnMode === mode ? '#3730a3' : 'transparent',
-                  color: spawnMode === mode ? 'white' : '#94a3b8',
-                  fontSize: 12, cursor: 'pointer', textTransform: 'capitalize',
-                }}
-              >
-                {mode}
-              </button>
+              <button key={mode} onClick={() => setSpawnMode(mode)} style={{
+                flex: 1, padding: '6px', borderRadius: 6, border: '1px solid',
+                borderColor: spawnMode === mode ? '#6366f1' : '#2d3148',
+                background: spawnMode === mode ? '#3730a3' : 'transparent',
+                color: spawnMode === mode ? 'white' : '#94a3b8',
+                fontSize: 12, cursor: 'pointer', textTransform: 'capitalize',
+              }}>{mode}</button>
             ))}
           </div>
           {spawnMode === 'gradual' && (
@@ -92,9 +118,7 @@ export default function ControlPanel({
                 <span style={{ fontSize: 11, color: '#64748b' }}>Spawn schedule</span>
                 <button onClick={addScheduleEntry} style={{ fontSize: 11, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}>+ Add</button>
               </div>
-              {spawnSchedule.length === 0 && (
-                <div style={{ fontSize: 11, color: '#475569' }}>No entries — uses default 2 agents/sec</div>
-              )}
+              {spawnSchedule.length === 0 && <div style={{ fontSize: 11, color: '#475569' }}>No entries — uses 2 agents/sec</div>}
               {spawnSchedule.map((entry, i) => (
                 <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
                   <span style={{ fontSize: 10, color: '#64748b', width: 20 }}>t=</span>
@@ -115,10 +139,8 @@ export default function ControlPanel({
       {/* Zone weights */}
       {!isSimulating && !isDone && (floorPlan.spawn_zones.length > 1 || floorPlan.exit_zones.length > 1) && (
         <div className="control-section">
-          <button
-            onClick={() => setShowZoneWeights(v => !v)}
-            style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', textAlign: 'left', padding: 0 }}
-          >
+          <button onClick={() => setShowZoneWeights(v => !v)}
+            style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', textAlign: 'left', padding: 0 }}>
             {showZoneWeights ? '▾' : '▸'} Zone weights
           </button>
           {showZoneWeights && (
@@ -126,19 +148,15 @@ export default function ControlPanel({
               {floorPlan.spawn_zones.map((z, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 11, color: '#4ade80', width: 60 }}>Spawn {i+1}</span>
-                  <input type="range" min={0.1} max={5} step={0.1} value={z.weight || 1}
-                    onChange={e => updateSpawnWeight(i, e.target.value)}
-                    style={{ flex: 1, accentColor: '#4ade80' }} />
-                  <span style={{ fontSize: 11, color: '#64748b', width: 24 }}>{(z.weight || 1).toFixed(1)}x</span>
+                  <input type="range" min={0.1} max={5} step={0.1} value={z.weight||1} onChange={e => updateSpawnWeight(i, e.target.value)} style={{ flex: 1, accentColor: '#4ade80' }} />
+                  <span style={{ fontSize: 11, color: '#64748b', width: 24 }}>{(z.weight||1).toFixed(1)}x</span>
                 </div>
               ))}
               {floorPlan.exit_zones.map((z, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 11, color: '#f87171', width: 60 }}>Exit {i+1}</span>
-                  <input type="range" min={0.1} max={5} step={0.1} value={z.weight || 1}
-                    onChange={e => updateExitWeight(i, e.target.value)}
-                    style={{ flex: 1, accentColor: '#f87171' }} />
-                  <span style={{ fontSize: 11, color: '#64748b', width: 24 }}>{(z.weight || 1).toFixed(1)}x</span>
+                  <input type="range" min={0.1} max={5} step={0.1} value={z.weight||1} onChange={e => updateExitWeight(i, e.target.value)} style={{ flex: 1, accentColor: '#f87171' }} />
+                  <span style={{ fontSize: 11, color: '#64748b', width: 24 }}>{(z.weight||1).toFixed(1)}x</span>
                 </div>
               ))}
             </div>
@@ -146,41 +164,48 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* Simulation speed */}
+      {/* Sim speed */}
       <div className="control-section">
         <div className="control-label">Sim Speed</div>
         <div style={{ display: 'flex', gap: 4 }}>
           {SPEED_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => { setSimSpeed(opt.value); if (isSimulating && onSpeedChange) onSpeedChange(opt.value) }}
-              style={{
-                flex: 1, padding: '5px 2px', borderRadius: 5, border: '1px solid',
-                borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
-                background: simSpeed === opt.value ? '#3730a3' : 'transparent',
-                color: simSpeed === opt.value ? 'white' : '#64748b',
-                fontSize: 11, cursor: 'pointer',
-              }}
-            >
-              {opt.label}
-            </button>
+            <button key={opt.value} onClick={() => { setSimSpeed(opt.value); if (isSimulating && onSpeedChange) onSpeedChange(opt.value) }} style={{
+              flex: 1, padding: '5px 2px', borderRadius: 5, border: '1px solid',
+              borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
+              background: simSpeed === opt.value ? '#3730a3' : 'transparent',
+              color: simSpeed === opt.value ? 'white' : '#64748b',
+              fontSize: 11, cursor: 'pointer',
+            }}>{opt.label}</button>
           ))}
         </div>
       </div>
 
-      {/* Run/stop/reset buttons */}
-      {!isSimulating && !isDone && (
-        <button className="btn btn-primary" onClick={onStart}>▶ Run Simulation</button>
-      )}
+      {/* Panic button — only during simulation */}
       {isSimulating && (
-        <button className="btn btn-danger" onClick={onStop}>⏹ Stop</button>
+        <div className="control-section">
+          <div className="control-label">Evacuation</div>
+          {!panicMode ? (
+            <button className="btn btn-danger" onClick={onTriggerPanic} style={{ fontSize: 12 }}>
+              🚨 Trigger Panic
+            </button>
+          ) : (
+            <button className="btn btn-secondary" onClick={onCalmDown} style={{ fontSize: 12 }}>
+              🕊 Calm Down
+            </button>
+          )}
+          <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
+            Panic mode: agents speed up and rush to exits
+          </div>
+        </div>
       )}
+
+      {/* Run/stop/reset */}
+      {!isSimulating && !isDone && <button className="btn btn-primary" onClick={onStart}>▶ Run Simulation</button>}
+      {isSimulating && <button className="btn btn-danger" onClick={onStop}>⏹ Stop</button>}
       {isDone && (
         <>
           <button className="btn btn-secondary" onClick={onReset}>↩ Back to Editor</button>
-          {heatMap && (
-            <button className="btn btn-secondary" onClick={onExport} style={{ marginTop: 4 }}>⬇ Export PNG</button>
-          )}
+          {heatMap && <button className="btn btn-secondary" onClick={onExport} style={{ marginTop: 4 }}>⬇ Export PNG</button>}
         </>
       )}
 
@@ -191,6 +216,7 @@ export default function ControlPanel({
           <div className="stat-row"><span className="stat-label">Time</span><span className="stat-value">{currentFrame.time}s</span></div>
           <div className="stat-row"><span className="stat-label">Active</span><span className="stat-value">{currentFrame.active_count} / {currentFrame.total_count}</span></div>
           <div className="stat-row"><span className="stat-label">Exited</span><span className="stat-value">{currentFrame.total_count - currentFrame.active_count}</span></div>
+          {currentFrame.panic && <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>🚨 PANIC MODE ACTIVE</div>}
         </div>
       )}
 
@@ -201,19 +227,13 @@ export default function ControlPanel({
           {heatMap && (
             <div className="toggle-row" style={{ marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: '#94a3b8' }}>Heat Map</span>
-              <label className="toggle">
-                <input type="checkbox" checked={showHeatMap} onChange={e => setShowHeatMap(e.target.checked)} />
-                <span className="toggle-slider" />
-              </label>
+              <label className="toggle"><input type="checkbox" checked={showHeatMap} onChange={e => setShowHeatMap(e.target.checked)} /><span className="toggle-slider" /></label>
             </div>
           )}
           {bottlenecks && bottlenecks.length > 0 && (
             <div className="toggle-row">
               <span style={{ fontSize: 12, color: '#94a3b8' }}>Bottlenecks</span>
-              <label className="toggle">
-                <input type="checkbox" checked={showBottlenecks} onChange={e => setShowBottlenecks(e.target.checked)} />
-                <span className="toggle-slider" />
-              </label>
+              <label className="toggle"><input type="checkbox" checked={showBottlenecks} onChange={e => setShowBottlenecks(e.target.checked)} /><span className="toggle-slider" /></label>
             </div>
           )}
         </div>
@@ -225,10 +245,10 @@ export default function ControlPanel({
         <div className="zone-legend">
           <div><span className="zone-dot" style={{ background: "rgba(74,222,128,0.4)" }} />Spawn</div>
           <div><span className="zone-dot" style={{ background: "rgba(248,113,113,0.4)" }} />Exit</div>
-          <div><span className="zone-dot" style={{ background: "#60a5fa" }} />Wall</div>
-          <div><span className="zone-dot" style={{ background: "#4ade80" }} />Sparse</div>
-          <div><span className="zone-dot" style={{ background: "#f87171" }} />Dense</div>
-          <div><span className="zone-dot" style={{ background: "#fbbf24" }} />Bottleneck</div>
+          <div><span className="zone-dot" style={{ background: "#a78bfa" }} />Customer</div>
+          <div><span className="zone-dot" style={{ background: "#34d399" }} />Staff</div>
+          <div><span className="zone-dot" style={{ background: "#fbbf24" }} />Child</div>
+          <div><span className="zone-dot" style={{ background: "#94a3b8" }} />Elderly</div>
         </div>
       </div>
     </div>

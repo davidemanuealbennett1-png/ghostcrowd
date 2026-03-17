@@ -30,13 +30,16 @@ export default function App() {
   const [undoStack, setUndoStack] = useState([])
   const [redoStack, setRedoStack] = useState([])
 
-  // Batch 2 state
+  // Batch 2
   const [simSpeed, setSimSpeed] = useState(1.0)
   const [spawnMode, setSpawnMode] = useState('instant')
   const [spawnSchedule, setSpawnSchedule] = useState([])
 
-  const wsRef = useRef(null)
+  // Batch 3
+  const [agentTypes, setAgentTypes] = useState({ customer: 1.0, staff: 0.0, child: 0.0, elderly: 0.0 })
+  const [panicMode, setPanicMode] = useState(false)
 
+  const wsRef = useRef(null)
   const [user, setUser] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSavedPlans, setShowSavedPlans] = useState(false)
@@ -55,14 +58,14 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSim) {
         e.preventDefault()
         if (undoStack.length === 0) return
-        const prev = undoStack[undoStack.length - 1]
-        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0, -1)); setFloorPlan(prev)
+        const prev = undoStack[undoStack.length-1]
+        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0,-1)); setFloorPlan(prev)
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSim) {
         e.preventDefault()
         if (redoStack.length === 0) return
-        const next = redoStack[redoStack.length - 1]
-        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0, -1)); setFloorPlan(next)
+        const next = redoStack[redoStack.length-1]
+        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0,-1)); setFloorPlan(next)
       }
       if (!isSim) {
         if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
@@ -77,15 +80,40 @@ export default function App() {
   }, [undoStack, redoStack, floorPlan, simulationState])
 
   const handleSpeedChange = useCallback((newSpeed) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "speed", sim_speed: newSpeed }))
     }
   }, [])
 
+  const handleTriggerPanic = useCallback(() => {
+    setPanicMode(true)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "panic" }))
+    }
+  }, [])
+
+  const handleCalmDown = useCallback(() => {
+    setPanicMode(false)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "calm" }))
+    }
+  }, [])
+
+  // Normalize agent types so they sum to 1
+  const getNormalizedAgentTypes = useCallback(() => {
+    const total = Object.values(agentTypes).reduce((a, b) => a + b, 0)
+    if (total === 0) return { customer: 1.0 }
+    const normalized = {}
+    for (const [k, v] of Object.entries(agentTypes)) {
+      if (v > 0) normalized[k] = v / total
+    }
+    return normalized
+  }, [agentTypes])
+
   const startSimulation = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
-    setBottlenecks(null); setShowHeatMap(false)
+    setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
     setSimulationState("running")
 
     const ws = new WebSocket(`${WS_URL}/simulate`)
@@ -99,12 +127,16 @@ export default function App() {
       max_steps: 3000,
       sim_speed: simSpeed,
       spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
+      agent_types: getNormalizedAgentTypes(),
+      panic_mode: false,
     }))
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-      if (msg.type === "frame") setCurrentFrame(msg)
-      else if (msg.type === "done") {
+      if (msg.type === "frame") {
+        setCurrentFrame(msg)
+        if (msg.panic !== undefined) setPanicMode(msg.panic)
+      } else if (msg.type === "done") {
         setResults(msg.summary); setHeatMap(msg.heat_map)
         setBottlenecks(msg.bottlenecks); setSimulationState("done")
       } else if (msg.type === "error") {
@@ -114,27 +146,27 @@ export default function App() {
 
     ws.onerror = () => setSimulationState(null)
     ws.onclose = () => {}
-  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule])
+  }, [floorPlan, agentCount, simSpeed, spawnMode, spawnSchedule, getNormalizedAgentTypes])
 
   const stopSimulation = useCallback(() => {
     if (wsRef.current) {
       try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
       wsRef.current.close()
     }
-    setSimulationState(null)
+    setSimulationState(null); setPanicMode(false)
   }, [])
 
   const resetAll = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
     setSimulationState(null); setCurrentFrame(null); setResults(null)
-    setHeatMap(null); setBottlenecks(null); setShowHeatMap(false)
+    setHeatMap(null); setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
   }, [])
 
   const exportHeatMap = useCallback(() => {
     const canvas = document.querySelector("canvas")
     if (!canvas) return
     const link = document.createElement("a")
-    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
+    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g,'-')}.png`
     link.href = canvas.toDataURL("image/png"); link.click()
   }, [floorPlanName])
 
@@ -230,6 +262,10 @@ export default function App() {
             spawnSchedule={spawnSchedule} setSpawnSchedule={setSpawnSchedule}
             floorPlan={floorPlan} setFloorPlan={setFloorPlan}
             onSpeedChange={handleSpeedChange}
+            agentTypes={agentTypes} setAgentTypes={setAgentTypes}
+            panicMode={panicMode}
+            onTriggerPanic={handleTriggerPanic}
+            onCalmDown={handleCalmDown}
           />
           {isDone && results && <ResultsPanel results={results} />}
         </aside>
