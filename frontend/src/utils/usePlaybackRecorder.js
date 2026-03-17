@@ -15,14 +15,13 @@ export function usePlaybackRecorder() {
   }, [])
 
   const recordFrame = useCallback((frame) => {
-    if (recording) {
-      framesRef.current.push(frame)
-    }
-  }, [recording])
+  framesRef.current.push(frame)
+}, [])
 
   const stopRecording = useCallback(() => {
-    setRecording(false)
-  }, [])
+  setRecording(false)
+  setHasRecording(framesRef.current.length > 0)
+}, [])
 
   const startPlayback = useCallback((speed = 1.0) => {
     if (framesRef.current.length === 0) return
@@ -61,7 +60,7 @@ export function usePlaybackRecorder() {
     setPlaybackProgress(pct)
   }, [])
 
-  const hasRecording = framesRef.current.length > 0
+  const [hasRecording, setHasRecording] = useState(false)
 
   return {
     recording, playback, playbackFrame, playbackProgress,
