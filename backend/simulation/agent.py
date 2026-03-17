@@ -1,39 +1,80 @@
 import numpy as np
 
+AGENT_TYPES = {
+    "customer": {
+        "speed_range": (1.0, 1.5),
+        "radius": 0.3,
+        "mass": 80.0,
+        "color": [167, 139, 250],
+        "panic_speed_multiplier": 2.5,
+    },
+    "staff": {
+        "speed_range": (1.4, 1.8),
+        "radius": 0.3,
+        "mass": 75.0,
+        "color": [52, 211, 153],
+        "panic_speed_multiplier": 1.5,
+    },
+    "child": {
+        "speed_range": (0.7, 1.0),
+        "radius": 0.2,
+        "mass": 40.0,
+        "color": [251, 191, 36],
+        "panic_speed_multiplier": 2.0,
+    },
+    "elderly": {
+        "speed_range": (0.5, 0.8),
+        "radius": 0.3,
+        "mass": 70.0,
+        "color": [148, 163, 184],
+        "panic_speed_multiplier": 1.2,
+    },
+}
+
 
 class Agent:
-    """A single pedestrian in the simulation."""
-
-    def __init__(self, agent_id, position, destination, desired_speed=None):
+    def __init__(self, agent_id, position, destination, agent_type="customer", panic=False):
         self.id = agent_id
         self.position = np.array(position, dtype=float)
         self.destination = np.array(destination, dtype=float)
-        self.desired_speed = desired_speed if desired_speed else np.random.uniform(1.2, 1.5)
+        self.agent_type = agent_type
+        self.panic = panic
+
+        type_cfg = AGENT_TYPES.get(agent_type, AGENT_TYPES["customer"])
+        base_speed = np.random.uniform(*type_cfg["speed_range"])
+        if panic:
+            base_speed *= type_cfg["panic_speed_multiplier"]
+
+        self.desired_speed = base_speed
         self.velocity = np.zeros(2)
-        self.radius = 0.3  # meters (body size)
-        self.mass = 80.0   # kg
+        self.radius = type_cfg["radius"]
+        self.mass = type_cfg["mass"]
+        self.color = type_cfg["color"]
         self.reached_destination = False
 
-        # Give agent a small random initial velocity toward destination
         direction = self.destination - self.position
         dist = np.linalg.norm(direction)
         if dist > 0:
             self.velocity = (direction / dist) * self.desired_speed * 0.1
 
+    def set_panic(self, panic):
+        if self.panic == panic:
+            return
+        self.panic = panic
+        type_cfg = AGENT_TYPES.get(self.agent_type, AGENT_TYPES["customer"])
+        base_speed = np.random.uniform(*type_cfg["speed_range"])
+        if panic:
+            base_speed *= type_cfg["panic_speed_multiplier"]
+        self.desired_speed = base_speed
+
     def update(self, force, dt):
-        """Update velocity and position given net force and timestep."""
         acceleration = force / self.mass
         self.velocity += acceleration * dt
-
-        # Cap speed at 2x desired speed (people don't sprint forever)
         speed = np.linalg.norm(self.velocity)
         max_speed = self.desired_speed * 2.0
         if speed > max_speed:
             self.velocity = (self.velocity / speed) * max_speed
-
         self.position += self.velocity * dt
-
-        # Check if reached destination
         dist_to_dest = np.linalg.norm(self.destination - self.position)
         if dist_to_dest < 0.5:
             self.reached_destination = True
@@ -46,4 +87,7 @@ class Agent:
             "vx": float(self.velocity[0]),
             "vy": float(self.velocity[1]),
             "reached": self.reached_destination,
+            "type": self.agent_type,
+            "color": self.color,
+            "panic": self.panic,
         }
