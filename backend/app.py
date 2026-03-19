@@ -135,6 +135,8 @@ async def simulate(websocket: WebSocket):
                 dist = np.linalg.norm(direction)
                 if dist > 0:
                     agent.velocity = (direction / dist) * agent.desired_speed * 0.1
+                    agent.waypoints = sim._build_waypoints(pos, dest)
+                    agent.current_waypoint_idx = 0
                 sim.agents.append(agent)
 
         if spawn_schedule:

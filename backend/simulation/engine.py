@@ -23,17 +23,40 @@ class SimulationEngine:
                 agent_type="customer",
                 panic=self.panic,
             )
+            # Assign waypoints through doors if any exist
+            agent.waypoints = self._build_waypoints(pos, dest)
+            agent.current_waypoint_idx = 0
             self.agents.append(agent)
+
+    def _build_waypoints(self, start, destination):
+        """
+        Build a list of waypoints: [door1_center, door2_center, ..., destination]
+        Doors are sorted by distance from start so agents visit them in order.
+        """
+        waypoints = []
+        if self.env.doors:
+            # Sort doors by distance from start position
+            doors_with_dist = []
+            for door in self.env.doors:
+                d = np.linalg.norm(np.array(start) - door.center)
+                doors_with_dist.append((d, door))
+            doors_with_dist.sort(key=lambda x: x[0])
+            for _, door in doors_with_dist:
+                waypoints.append(('door', door.center, door))
+        waypoints.append(('exit', np.array(destination), None))
+        return waypoints
 
     def set_panic(self, panic: bool):
         self.panic = panic
         for agent in self.agents:
             if not agent.reached_destination:
                 agent.set_panic(panic)
-                agent.destination = self.env.random_exit_position()
+                new_dest = self.env.random_exit_position()
+                agent.destination = new_dest
+                agent.waypoints = self._build_waypoints(agent.position, new_dest)
+                agent.current_waypoint_idx = 0
 
     def _wall_force(self, agent):
-        """Repulsion from all walls and obstacles."""
         total = np.zeros(2)
         A = 2000.0
         B = 0.08
@@ -52,7 +75,6 @@ class SimulationEngine:
         return total
 
     def _agent_force(self, agent, others):
-        """Repulsion from other agents."""
         total = np.zeros(2)
         A = 2000.0
         B = 0.08
@@ -71,57 +93,77 @@ class SimulationEngine:
             total += force_mag * (diff / dist)
         return total
 
+    def _get_current_target(self, agent):
+        """Get agent's current navigation target (door center or final exit)."""
+        if not hasattr(agent, 'waypoints') or not agent.waypoints:
+            return agent.destination
+        if not hasattr(agent, 'current_waypoint_idx'):
+            agent.current_waypoint_idx = 0
+        idx = agent.current_waypoint_idx
+        if idx >= len(agent.waypoints):
+            return agent.destination
+        _, target_pos, _ = agent.waypoints[idx]
+        return target_pos
+
+    def _advance_waypoint(self, agent):
+        """Move agent to next waypoint if close enough to current one."""
+        if not hasattr(agent, 'waypoints') or not agent.waypoints:
+            return
+        if not hasattr(agent, 'current_waypoint_idx'):
+            agent.current_waypoint_idx = 0
+        idx = agent.current_waypoint_idx
+        if idx >= len(agent.waypoints):
+            return
+        wtype, target_pos, door_obj = agent.waypoints[idx]
+        dist = np.linalg.norm(agent.position - target_pos)
+
+        # Threshold to advance: larger for doors so agents don't get stuck
+        threshold = 0.8 if wtype == 'door' else 0.5
+
+        if dist < threshold:
+            if wtype == 'door' and door_obj is not None:
+                # Trigger door delay
+                agent.enter_door(door_obj.delay)
+            agent.current_waypoint_idx += 1
+
     def _desired_force(self, agent):
-        """Force toward destination (or toward nearest door if one is nearby)."""
-        # Check if there's a door between agent and destination
-        nearest_door = self.env.get_nearest_door(agent.position, max_dist=4.0)
-
-        if nearest_door is not None and not nearest_door.agent_is_in_door(agent.position, threshold=0.5):
-            # Agent is near a door but not in it yet — attract toward door center
-            target = nearest_door.center
-        else:
-            target = agent.destination
-
+        target = self._get_current_target(agent)
         direction = target - agent.position
         dist = np.linalg.norm(direction)
         if dist < 0.01:
             return np.zeros(2)
-
         desired_velocity = (direction / dist) * agent.desired_speed
         relaxation_time = 0.5
         return agent.mass * (desired_velocity - agent.velocity) / relaxation_time
-
-    def _door_check(self, agent):
-        """Check if agent is entering a door and apply delay."""
-        for door in self.env.doors:
-            if door.agent_is_in_door(agent.position, threshold=0.6):
-                agent.enter_door(door.delay)
-                break
 
     def step(self):
         active = [a for a in self.agents if not a.reached_destination]
 
         for agent in active:
-            # Check door entry
-            self._door_check(agent)
+            # Advance to next waypoint if close enough
+            self._advance_waypoint(agent)
 
             # Compute forces
             f_desired = self._desired_force(agent)
             f_wall = self._wall_force(agent)
             f_agent = self._agent_force(agent, active)
 
-            # If agent is in door delay, dampen movement heavily
+            # Dampen movement during door delay
             if agent.in_door:
-                total_force = f_desired * 0.05 + f_wall * 0.3
+                total_force = f_desired * 0.1 + f_wall * 0.5
             else:
                 total_force = f_desired + f_wall + f_agent
 
             agent.update(total_force, self.dt)
 
-            # Clamp to environment bounds
+            # Clamp to bounds
             r = agent.radius
             agent.position[0] = np.clip(agent.position[0], r, self.env.width - r)
             agent.position[1] = np.clip(agent.position[1], r, self.env.height - r)
+
+            # Check if reached final destination
+            if np.linalg.norm(agent.position - agent.destination) < 0.5:
+                agent.reached_destination = True
 
         self.time += self.dt
 
