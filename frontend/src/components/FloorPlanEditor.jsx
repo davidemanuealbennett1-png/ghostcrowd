@@ -28,7 +28,7 @@ const SNAP_OPTIONS = [
   { label: 'Free', value: null },
 ]
 
-function ptInRect(px, py, rx, ry, rw, rh) { return px>=rx && px<=rx+rw && py>=ry && py<=ry+rh }
+function ptInRect(px, py, rx, ry, rw, rh) { return px>=rx&&px<=rx+rw&&py>=ry&&py<=ry+rh }
 
 function getItemsInRect(floorPlan, sx, sy, sw, sh) {
   const sel = []
@@ -56,7 +56,6 @@ function getItemData(fp, item) {
   return null
 }
 
-// Get bounding box center of a clipboard set
 function getClipboardCenter(items) {
   let xs = [], ys = []
   items.forEach(item => {
@@ -65,8 +64,8 @@ function getClipboardCenter(items) {
     else if (item.type==='obstacle') { xs.push(d.x+d.width/2); ys.push(d.y+d.height/2) }
     else if (item.type==='spawn'||item.type==='exit') { xs.push(d.x+d.w/2); ys.push(d.y+d.h/2) }
   })
-  if (xs.length === 0) return { cx: 0, cy: 0 }
-  return { cx: (Math.min(...xs)+Math.max(...xs))/2, cy: (Math.min(...ys)+Math.max(...ys))/2 }
+  if (xs.length===0) return {cx:0,cy:0}
+  return {cx:(Math.min(...xs)+Math.max(...xs))/2, cy:(Math.min(...ys)+Math.max(...ys))/2}
 }
 
 export default function FloorPlanEditor({
@@ -82,7 +81,10 @@ export default function FloorPlanEditor({
   const [gridSnap, setGridSnap] = useState(0.5)
   const [selected, setSelected] = useState([])
   const [clipboard, setClipboard] = useState([])
-  const [pasteMode, setPasteMode] = useState(false) // waiting for click to place
+  const [pasteMode, setPasteMode] = useState(false)
+  // Door settings panel
+  const [doorDelay, setDoorDelay] = useState(1.0) // default 1 second delay
+  const [showDoorSettings, setShowDoorSettings] = useState(false)
   const bgImgRef = useRef(null)
 
   const scale = DISPLAY_SCALE
@@ -93,6 +95,11 @@ export default function FloorPlanEditor({
     if (backgroundImage) { const img=new Image(); img.onload=()=>{bgImgRef.current=img}; img.src=backgroundImage }
     else bgImgRef.current=null
   }, [backgroundImage])
+
+  // Show door settings when door tool selected
+  useEffect(() => {
+    setShowDoorSettings(activeTool === 'door')
+  }, [activeTool])
 
   const pushUndo = useCallback((prevState) => {
     setUndoStack(s=>[...s.slice(-30),prevState]); setRedoStack([])
@@ -126,12 +133,10 @@ export default function FloorPlanEditor({
   const copySelected = useCallback((cut=false) => {
     if (selected.length===0) return
     const items = selected.map(s=>({type:s.type,data:getItemData(floorPlan,s)})).filter(i=>i.data)
-    setClipboard(items)
-    setPasteMode(true) // enter paste mode — next click places items
+    setClipboard(items); setPasteMode(true)
     if (cut) deleteSelected()
   }, [selected,floorPlan,deleteSelected])
 
-  // Place clipboard items at a target position (in meters)
   const pasteAt = useCallback((targetX, targetY) => {
     if (clipboard.length===0) return
     const {cx,cy} = getClipboardCenter(clipboard)
@@ -152,20 +157,16 @@ export default function FloorPlanEditor({
     setPasteMode(false)
   }, [clipboard,floorPlan,pushUndo,setFloorPlan])
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName==='INPUT') return
-      if (activeTool!=='select') { if (e.key==='Escape') setPasteMode(false); return }
-      if (e.key==='Escape') { setPasteMode(false); setSelected([]) }
-      if (e.key==='Delete'||e.key==='Backspace') { e.preventDefault(); deleteSelected() }
-      if ((e.ctrlKey||e.metaKey)&&e.key==='c') { e.preventDefault(); copySelected(false) }
-      if ((e.ctrlKey||e.metaKey)&&e.key==='x') { e.preventDefault(); copySelected(true) }
-      if ((e.ctrlKey||e.metaKey)&&e.key==='v') {
-        e.preventDefault()
-        if (clipboard.length>0) setPasteMode(true)
-      }
-      if ((e.ctrlKey||e.metaKey)&&e.key==='a') {
+      if (activeTool!=='select') { if(e.key==='Escape')setPasteMode(false); return }
+      if (e.key==='Escape'){setPasteMode(false);setSelected([])}
+      if (e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelected()}
+      if ((e.ctrlKey||e.metaKey)&&e.key==='c'){e.preventDefault();copySelected(false)}
+      if ((e.ctrlKey||e.metaKey)&&e.key==='x'){e.preventDefault();copySelected(true)}
+      if ((e.ctrlKey||e.metaKey)&&e.key==='v'){e.preventDefault();if(clipboard.length>0)setPasteMode(true)}
+      if ((e.ctrlKey||e.metaKey)&&e.key==='a'){
         e.preventDefault()
         const all=[]
         floorPlan.walls.forEach((_,i)=>all.push({type:'wall',index:i}))
@@ -177,7 +178,7 @@ export default function FloorPlanEditor({
     }
     window.addEventListener('keydown',handleKey)
     return ()=>window.removeEventListener('keydown',handleKey)
-  }, [activeTool,deleteSelected,copySelected,pasteAt,clipboard,floorPlan])
+  }, [activeTool,deleteSelected,copySelected,clipboard,floorPlan])
 
   const isItemSelected=(type,index)=>selected.some(s=>s.type===type&&s.index===index)
 
@@ -197,6 +198,7 @@ export default function FloorPlanEditor({
     for(let x=0;x<=W;x+=majorGridPx){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
     for(let y=0;y<=H;y+=majorGridPx){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
 
+    // Spawn zones
     floorPlan.spawn_zones.forEach((z,i)=>{
       const sel=isItemSelected('spawn',i)
       ctx.fillStyle="rgba(74,222,128,0.15)";ctx.strokeStyle=sel?"#fff":"rgba(74,222,128,0.6)";ctx.lineWidth=sel?2:1.5
@@ -206,6 +208,7 @@ export default function FloorPlanEditor({
       ctx.fillText("SPAWN",toPx(z.x,scale)+4,toPx(z.y,scale)+14)
     })
 
+    // Exit zones
     floorPlan.exit_zones.forEach((z,i)=>{
       const sel=isItemSelected('exit',i)
       ctx.fillStyle="rgba(248,113,113,0.15)";ctx.strokeStyle=sel?"#fff":"rgba(248,113,113,0.6)";ctx.lineWidth=sel?2:1.5
@@ -215,6 +218,7 @@ export default function FloorPlanEditor({
       ctx.fillText("EXIT",toPx(z.x,scale)+4,toPx(z.y,scale)+14)
     })
 
+    // Obstacles
     floorPlan.obstacles.forEach((o,i)=>{
       const sel=isItemSelected('obstacle',i)
       ctx.fillStyle=sel?"rgba(100,116,139,0.6)":"rgba(100,116,139,0.4)"
@@ -223,15 +227,33 @@ export default function FloorPlanEditor({
       ctx.strokeRect(toPx(o.x,scale),toPx(o.y,scale),toPx(o.width,scale),toPx(o.height,scale))
     })
 
+    // Walls and doors
     ctx.lineCap="round"
     floorPlan.walls.forEach((w,i)=>{
       const sel=isItemSelected('wall',i)
-      if(w.isDoor){ctx.setLineDash([8,4]);ctx.strokeStyle=sel?"#fff":"#fbbf24";ctx.lineWidth=sel?5:3}
-      else{ctx.setLineDash([]);ctx.strokeStyle=sel?"#fff":"#60a5fa";ctx.lineWidth=sel?5:3}
-      ctx.beginPath();ctx.moveTo(toPx(w.x1,scale),toPx(w.y1,scale));ctx.lineTo(toPx(w.x2,scale),toPx(w.y2,scale));ctx.stroke()
-      ctx.setLineDash([])
+      if(w.isDoor){
+        // Door: yellow dashed with delay label
+        ctx.setLineDash([8,4])
+        ctx.strokeStyle=sel?"#fff":"#fbbf24"
+        ctx.lineWidth=sel?5:4
+        ctx.beginPath();ctx.moveTo(toPx(w.x1,scale),toPx(w.y1,scale));ctx.lineTo(toPx(w.x2,scale),toPx(w.y2,scale));ctx.stroke()
+        ctx.setLineDash([])
+        // Door icon + delay
+        const mx=(toPx(w.x1,scale)+toPx(w.x2,scale))/2
+        const my=(toPx(w.y1,scale)+toPx(w.y2,scale))/2
+        ctx.fillStyle="#fbbf24";ctx.font="bold 10px sans-serif";ctx.textAlign="center"
+        ctx.fillText(`🚪 ${(w.doorDelay||0)}s`,mx,my-8)
+        ctx.textAlign="left"
+      } else {
+        ctx.setLineDash([])
+        ctx.strokeStyle=sel?"#fff":"#60a5fa"
+        ctx.lineWidth=sel?5:3
+        ctx.beginPath();ctx.moveTo(toPx(w.x1,scale),toPx(w.y1,scale));ctx.lineTo(toPx(w.x2,scale),toPx(w.y2,scale));ctx.stroke()
+      }
       ctx.fillStyle=sel?"#fff":(w.isDoor?"#fde68a":"#93c5fd")
-      for(const [ex,ey] of [[toPx(w.x1,scale),toPx(w.y1,scale)],[toPx(w.x2,scale),toPx(w.y2,scale)]]){ctx.beginPath();ctx.arc(ex,ey,3,0,Math.PI*2);ctx.fill()}
+      for(const [ex,ey] of [[toPx(w.x1,scale),toPx(w.y1,scale)],[toPx(w.x2,scale),toPx(w.y2,scale)]]){
+        ctx.beginPath();ctx.arc(ex,ey,3,0,Math.PI*2);ctx.fill()
+      }
     })
 
     ctx.strokeStyle="#3b82f6";ctx.lineWidth=2;ctx.strokeRect(1,1,W-2,H-2)
@@ -251,7 +273,7 @@ export default function FloorPlanEditor({
         ctx.setLineDash([])
         const len=Math.hypot(toMeters(mousePos.x-startPt.x,scale),toMeters(mousePos.y-startPt.y,scale)).toFixed(2)
         ctx.fillStyle="#fbbf24";ctx.font="11px sans-serif"
-        ctx.fillText(`${len}m gap`,(startPt.x+mousePos.x)/2+4,(startPt.y+mousePos.y)/2-4)
+        ctx.fillText(`${len}m · ${doorDelay}s delay`,(startPt.x+mousePos.x)/2+4,(startPt.y+mousePos.y)/2-4)
       } else if(['obstacle','spawn','exit'].includes(activeTool)){
         ctx.setLineDash([5,5])
         const x=Math.min(startPt.x,mousePos.x),y=Math.min(startPt.y,mousePos.y)
@@ -268,7 +290,7 @@ export default function FloorPlanEditor({
       }
     }
 
-    // Paste mode ghost preview
+    // Paste ghost preview
     if(pasteMode&&mousePos&&clipboard.length>0){
       const mx=toMeters(mousePos.x,scale),my=toMeters(mousePos.y,scale)
       const {cx,cy}=getClipboardCenter(clipboard)
@@ -288,11 +310,9 @@ export default function FloorPlanEditor({
         } else if(item.type==='spawn'){
           ctx.fillStyle="rgba(74,222,128,0.2)";ctx.strokeStyle="rgba(74,222,128,0.6)";ctx.lineWidth=1.5
           ctx.fillRect(toPx(d.x+dx,scale),toPx(d.y+dy,scale),toPx(d.w,scale),toPx(d.h,scale))
-          ctx.strokeRect(toPx(d.x+dx,scale),toPx(d.y+dy,scale),toPx(d.w,scale),toPx(d.h,scale))
         } else if(item.type==='exit'){
           ctx.fillStyle="rgba(248,113,113,0.2)";ctx.strokeStyle="rgba(248,113,113,0.6)";ctx.lineWidth=1.5
           ctx.fillRect(toPx(d.x+dx,scale),toPx(d.y+dy,scale),toPx(d.w,scale),toPx(d.h,scale))
-          ctx.strokeRect(toPx(d.x+dx,scale),toPx(d.y+dy,scale),toPx(d.w,scale),toPx(d.h,scale))
         }
       })
       ctx.globalAlpha=1.0
@@ -306,26 +326,19 @@ export default function FloorPlanEditor({
     if(activeTool==='select'&&selected.length>0&&!pasteMode){
       ctx.fillStyle="rgba(99,102,241,0.85)";ctx.fillRect(0,H-24,W,24)
       ctx.fillStyle="white";ctx.font="11px sans-serif"
-      ctx.fillText(`${selected.length} selected · Del · Ctrl+C · Ctrl+X · Ctrl+V=paste · Ctrl+A=all · Esc=deselect`,8,H-8)
+      ctx.fillText(`${selected.length} selected · Del · Ctrl+C · Ctrl+X · Ctrl+V · Ctrl+A · Esc`,8,H-8)
     }
-
     if(pasteMode){
       ctx.fillStyle="rgba(251,191,36,0.9)";ctx.fillRect(0,H-24,W,24)
       ctx.fillStyle="#1a1d2e";ctx.font="bold 11px sans-serif"
-      ctx.fillText("PASTE MODE — move mouse to position, click to place, Esc to cancel",8,H-8)
+      ctx.fillText("PASTE MODE — click to place · Esc to cancel",8,H-8)
     }
-
-  }, [floorPlan,drawing,startPt,mousePos,activeTool,snapIndicator,gridSnap,W,H,scale,selected,pasteMode,clipboard])
+  }, [floorPlan,drawing,startPt,mousePos,activeTool,snapIndicator,gridSnap,W,H,scale,selected,pasteMode,clipboard,doorDelay])
 
   useEffect(()=>{draw()},[draw])
 
   const handleStart = useCallback((pos) => {
-    // In paste mode, clicking places items
-    if(pasteMode){
-      const mx=toMeters(pos.x,scale),my=toMeters(pos.y,scale)
-      pasteAt(mx,my)
-      return
-    }
+    if(pasteMode){const mx=toMeters(pos.x,scale),my=toMeters(pos.y,scale);pasteAt(mx,my);return}
     if(activeTool==='erase'){
       const mx=toMeters(pos.x,scale),my=toMeters(pos.y,scale)
       const item=findClosestItem(mx,my,floorPlan)
@@ -380,13 +393,27 @@ export default function FloorPlanEditor({
     const x2=toMeters(pos.x,scale),y2=toMeters(pos.y,scale)
     const r=v=>Math.round(v*100)/100
     pushUndo(floorPlan)
-    if(activeTool==='wall'){if(Math.hypot(x2-x1,y2-y1)<0.05)return;setFloorPlan(fp=>({...fp,walls:[...fp.walls,{x1:r(x1),y1:r(y1),x2:r(x2),y2:r(y2)}]}))}
-    else if(activeTool==='door'){if(Math.hypot(x2-x1,y2-y1)<0.1)return;setFloorPlan(fp=>({...fp,walls:[...fp.walls,{x1:r(x1),y1:r(y1),x2:r(x2),y2:r(y2),isDoor:true}]}))}
-    else if(activeTool==='obstacle'){const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1));if(ow<0.05||oh<0.05)return;setFloorPlan(fp=>({...fp,obstacles:[...fp.obstacles,{x:ox,y:oy,width:ow,height:oh}]}))}
-    else if(activeTool==='spawn'){const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1));if(ow<0.05||oh<0.05)return;setFloorPlan(fp=>({...fp,spawn_zones:[...fp.spawn_zones,{x:ox,y:oy,w:ow,h:oh}]}))}
-    else if(activeTool==='exit'){const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1));if(ow<0.05||oh<0.05)return;setFloorPlan(fp=>({...fp,exit_zones:[...fp.exit_zones,{x:ox,y:oy,w:ow,h:oh}]}))}
+    if(activeTool==='wall'){
+      if(Math.hypot(x2-x1,y2-y1)<0.05)return
+      setFloorPlan(fp=>({...fp,walls:[...fp.walls,{x1:r(x1),y1:r(y1),x2:r(x2),y2:r(y2)}]}))
+    } else if(activeTool==='door'){
+      if(Math.hypot(x2-x1,y2-y1)<0.1)return
+      setFloorPlan(fp=>({...fp,walls:[...fp.walls,{x1:r(x1),y1:r(y1),x2:r(x2),y2:r(y2),isDoor:true,doorDelay:doorDelay}]}))
+    } else if(activeTool==='obstacle'){
+      const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1))
+      if(ow<0.05||oh<0.05)return
+      setFloorPlan(fp=>({...fp,obstacles:[...fp.obstacles,{x:ox,y:oy,width:ow,height:oh}]}))
+    } else if(activeTool==='spawn'){
+      const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1))
+      if(ow<0.05||oh<0.05)return
+      setFloorPlan(fp=>({...fp,spawn_zones:[...fp.spawn_zones,{x:ox,y:oy,w:ow,h:oh}]}))
+    } else if(activeTool==='exit'){
+      const ox=r(Math.min(x1,x2)),oy=r(Math.min(y1,y2)),ow=r(Math.abs(x2-x1)),oh=r(Math.abs(y2-y1))
+      if(ow<0.05||oh<0.05)return
+      setFloorPlan(fp=>({...fp,exit_zones:[...fp.exit_zones,{x:ox,y:oy,w:ow,h:oh}]}))
+    }
     setStartPt(null);setMousePos(null);setSnapIndicator(null)
-  }, [drawing,startPt,activeTool,floorPlan,setFloorPlan,pushUndo,scale,selected])
+  }, [drawing,startPt,activeTool,floorPlan,setFloorPlan,pushUndo,scale,selected,doorDelay])
 
   const onMouseDown=useCallback((e)=>{handleStart(getPos(e))},[handleStart,getPos])
   const onMouseMove=useCallback((e)=>{handleMove(getPos(e))},[handleMove,getPos])
@@ -396,9 +423,9 @@ export default function FloorPlanEditor({
   const onTouchEnd=useCallback((e)=>{e.preventDefault();handleEnd(getTouchPos(e))},[handleEnd,getTouchPos])
 
   const getCursor=()=>{
-    if(pasteMode) return 'copy'
-    if(activeTool==='select') return 'default'
-    if(activeTool==='erase') return 'pointer'
+    if(pasteMode)return 'copy'
+    if(activeTool==='select')return 'default'
+    if(activeTool==='erase')return 'pointer'
     return 'crosshair'
   }
 
@@ -414,7 +441,20 @@ export default function FloorPlanEditor({
             color:gridSnap===opt.value?"white":"#64748b",fontSize:11,cursor:"pointer",
           }}>{opt.label}</button>
         ))}
+
+        {/* Door delay control — only visible when door tool active */}
+        {activeTool==='door' && (
+          <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8,paddingLeft:8,borderLeft:"1px solid #2d3148"}}>
+            <span style={{fontSize:11,color:"#fbbf24"}}>🚪 Delay:</span>
+            <input type="number" min={0} max={10} step={0.5} value={doorDelay}
+              onChange={e=>setDoorDelay(Number(e.target.value))}
+              style={{width:52,padding:"2px 6px",background:"#0f1117",border:"1px solid #fbbf24",borderRadius:4,color:"#fbbf24",fontSize:12}}
+            />
+            <span style={{fontSize:11,color:"#64748b"}}>sec</span>
+          </div>
+        )}
       </div>
+
       <div style={{position:"relative",width:"100%",maxWidth:W}}>
         <canvas ref={canvasRef} width={W} height={H}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
@@ -423,14 +463,14 @@ export default function FloorPlanEditor({
           style={{cursor:getCursor(),borderRadius:4,touchAction:"none",width:"100%",height:"auto"}}
         />
         <div className="canvas-hint">
-          {!pasteMode&&activeTool==="wall"&&"Drag to draw walls · Yellow circle = snap to endpoint"}
-          {!pasteMode&&activeTool==="door"&&"Drag to place a door (yellow dashed = passable gap)"}
+          {!pasteMode&&activeTool==="wall"&&"Drag to draw walls"}
+          {!pasteMode&&activeTool==="door"&&"Drag to place a door · set delay above · agents slow down to pass through"}
           {!pasteMode&&activeTool==="obstacle"&&"Drag to place a table or obstacle"}
           {!pasteMode&&activeTool==="spawn"&&"Drag to set where people appear"}
           {!pasteMode&&activeTool==="exit"&&"Drag to set where people go"}
           {!pasteMode&&activeTool==="erase"&&"Click any wall, zone or obstacle to erase it"}
-          {!pasteMode&&activeTool==="select"&&"Drag to multi-select · Click=select · Del · Ctrl+C/X/V · Ctrl+A=all"}
-          {pasteMode&&"Move mouse to position and click to paste · Esc to cancel"}
+          {!pasteMode&&activeTool==="select"&&"Drag to multi-select · Ctrl+C/X/V · Del · Esc"}
+          {pasteMode&&"Move mouse and click to paste · Esc to cancel"}
         </div>
       </div>
     </div>

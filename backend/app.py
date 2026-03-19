@@ -42,7 +42,8 @@ def build_environment(floor_plan: dict) -> Environment:
     env = Environment(width=width, height=height)
     for w in floor_plan.get("walls", []):
         is_door = bool(w.get("isDoor", False))
-        env.add_wall(w["x1"], w["y1"], w["x2"], w["y2"], is_door=is_door)
+        door_delay = float(w.get("doorDelay", 0.0))
+        env.add_wall(w["x1"], w["y1"], w["x2"], w["y2"], is_door=is_door, door_delay=door_delay)
     for o in floor_plan.get("obstacles", []):
         env.add_obstacle(o["x"], o["y"], o["width"], o["height"])
     for z in floor_plan.get("spawn_zones", []):
@@ -69,7 +70,6 @@ async def simulate(websocket: WebSocket):
     try:
         raw = await websocket.receive_text()
         config = json.loads(raw)
-        print(f"[simulate] config received: agent_count={config.get('agent_count')}")
 
         agent_count = min(int(config.get("agent_count", 50)), 500)
         floor_plan = config.get("floor_plan", {})
@@ -110,13 +110,17 @@ async def simulate(websocket: WebSocket):
                 agent.agent_type = chosen["id"]
                 agent.panic = panic_mode
                 agent.desired_speed = np.random.uniform(speed_min, speed_max)
+                agent.base_desired_speed = agent.desired_speed
                 if panic_mode:
                     agent.desired_speed *= 2.5
+                    agent.base_desired_speed = agent.desired_speed
                 agent.velocity = np.zeros(2)
                 agent.radius = 0.3
                 agent.mass = 75.0
                 agent.color = color_rgb
                 agent.reached_destination = False
+                agent.door_delay_remaining = 0.0
+                agent.in_door = False
                 direction = agent.destination - agent.position
                 dist = np.linalg.norm(direction)
                 if dist > 0:
@@ -130,8 +134,6 @@ async def simulate(websocket: WebSocket):
             spawn_custom(agent_count)
             spawned = agent_count
             spawn_queue = 0.0
-
-        print(f"[simulate] spawned {spawned} agents")
 
         await websocket.send_json({
             "type": "init",
@@ -183,7 +185,6 @@ async def simulate(websocket: WebSocket):
             if state["active_count"] == 0 and spawned >= agent_count:
                 break
 
-        print(f"[simulate] complete after {step} steps")
         summary = analytics.get_summary(sim.agents)
         heat_map = analytics.get_normalized_heat_map()
         bottlenecks = analytics.get_bottlenecks(threshold=0.6)

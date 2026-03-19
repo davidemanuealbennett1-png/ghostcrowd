@@ -46,11 +46,16 @@ class Agent:
             base_speed *= type_cfg["panic_speed_multiplier"]
 
         self.desired_speed = base_speed
+        self.base_desired_speed = base_speed  # store original for door delay
         self.velocity = np.zeros(2)
         self.radius = type_cfg["radius"]
         self.mass = type_cfg["mass"]
         self.color = type_cfg["color"]
         self.reached_destination = False
+
+        # Door traversal state
+        self.door_delay_remaining = 0.0  # seconds remaining to pass through door
+        self.in_door = False
 
         direction = self.destination - self.position
         dist = np.linalg.norm(direction)
@@ -66,8 +71,23 @@ class Agent:
         if panic:
             base_speed *= type_cfg["panic_speed_multiplier"]
         self.desired_speed = base_speed
+        self.base_desired_speed = base_speed
+
+    def enter_door(self, delay_seconds):
+        """Called when agent enters a door zone."""
+        if not self.in_door and delay_seconds > 0:
+            self.in_door = True
+            self.door_delay_remaining = delay_seconds
+            self.desired_speed = 0.1  # slow to near-stop
 
     def update(self, force, dt):
+        # Handle door delay
+        if self.in_door and self.door_delay_remaining > 0:
+            self.door_delay_remaining -= dt
+            if self.door_delay_remaining <= 0:
+                self.in_door = False
+                self.desired_speed = self.base_desired_speed  # restore speed
+
         acceleration = force / self.mass
         self.velocity += acceleration * dt
         speed = np.linalg.norm(self.velocity)
@@ -90,4 +110,5 @@ class Agent:
             "type": self.agent_type,
             "color": self.color,
             "panic": self.panic,
+            "in_door": self.in_door,
         }

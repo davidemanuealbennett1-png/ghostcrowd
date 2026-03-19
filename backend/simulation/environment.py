@@ -17,6 +17,32 @@ class Wall:
         return self.p1 + t * seg
 
 
+class Door:
+    """A passable gap — agents are attracted through it."""
+    def __init__(self, x1, y1, x2, y2, delay=0.0):
+        self.p1 = np.array([x1, y1], dtype=float)
+        self.p2 = np.array([x2, y2], dtype=float)
+        self.center = (self.p1 + self.p2) / 2
+        self.delay = delay  # seconds to pass through
+        # Door width for proximity check
+        self.width = np.linalg.norm(self.p2 - self.p1)
+
+    def closest_point(self, point):
+        p = np.array(point, dtype=float)
+        seg = self.p2 - self.p1
+        seg_len_sq = np.dot(seg, seg)
+        if seg_len_sq == 0:
+            return self.p1.copy()
+        t = np.dot(p - self.p1, seg) / seg_len_sq
+        t = np.clip(t, 0.0, 1.0)
+        return self.p1 + t * seg
+
+    def agent_is_in_door(self, position, threshold=0.8):
+        """Check if agent is within the door zone."""
+        cp = self.closest_point(position)
+        return np.linalg.norm(position - cp) < threshold
+
+
 class RectObstacle:
     def __init__(self, x, y, width, height):
         self.x = x
@@ -47,6 +73,7 @@ class Environment:
         self.width = width
         self.height = height
         self.walls = []
+        self.doors = []
         self.obstacles = []
         self.spawn_zones = []
         self.exit_zones = []
@@ -59,10 +86,10 @@ class Environment:
         self.walls.append(Wall(w, h, 0, h))
         self.walls.append(Wall(0, h, 0, 0))
 
-    def add_wall(self, x1, y1, x2, y2, is_door=False):
-        # Doors are visual only — they don't add physics walls
-        # This creates a passable gap in the layout
-        if not is_door:
+    def add_wall(self, x1, y1, x2, y2, is_door=False, door_delay=0.0):
+        if is_door:
+            self.doors.append(Door(x1, y1, x2, y2, delay=door_delay))
+        else:
             self.walls.append(Wall(x1, y1, x2, y2))
 
     def add_obstacle(self, x, y, width, height):
@@ -104,6 +131,17 @@ class Environment:
             all_walls.extend(obs.walls)
         return all_walls
 
+    def get_nearest_door(self, position, max_dist=3.0):
+        """Return nearest door if agent is close enough to be attracted through it."""
+        best = None
+        best_dist = max_dist
+        for door in self.doors:
+            d = np.linalg.norm(position - door.center)
+            if d < best_dist:
+                best_dist = d
+                best = door
+        return best
+
     def to_dict(self):
         return {
             "width": self.width,
@@ -112,4 +150,5 @@ class Environment:
             "obstacles": [{"x": o.x, "y": o.y, "width": o.width, "height": o.height} for o in self.obstacles],
             "spawn_zones": [{"x": z[0], "y": z[1], "w": z[2], "h": z[3], "weight": z[4]} for z in self.spawn_zones],
             "exit_zones": [{"x": z[0], "y": z[1], "w": z[2], "h": z[3], "weight": z[4]} for z in self.exit_zones],
+            "doors": [{"x1": d.p1[0], "y1": d.p1[1], "x2": d.p2[0], "y2": d.p2[1], "delay": d.delay} for d in self.doors],
         }
