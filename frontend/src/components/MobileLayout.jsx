@@ -20,13 +20,9 @@ const PRESET_COLORS = ['#a78bfa','#34d399','#fbbf24','#94a3b8','#f87171','#60a5f
 
 function MobileAgentEditor({ agentTypes, setAgentTypes }) {
   const totalProportion = agentTypes.reduce((sum, t) => sum + t.proportion, 0)
-
   const updateType = (id, field, value) =>
     setAgentTypes(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
-
-  const removeType = (id) =>
-    setAgentTypes(prev => prev.filter(t => t.id !== id))
-
+  const removeType = (id) => setAgentTypes(prev => prev.filter(t => t.id !== id))
   const addType = () => {
     const newId = `custom_${Date.now()}`
     setAgentTypes(prev => [...prev, {
@@ -120,7 +116,6 @@ export default function MobileLayout({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [panel, setPanel] = useState(null) // null | 'settings' | 'agents'
-
   const togglePanel = (name) => setPanel(p => p === name ? null : name)
 
   return (
@@ -130,27 +125,18 @@ export default function MobileLayout({
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '8px 12px', background: '#1a1d2e', borderBottom: '1px solid #2d3148',
-        flexShrink: 0, zIndex: 10,
+        flexShrink: 0,
       }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#a78bfa' }}>👻 GhostCrowd</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {!isDone && !isSimulating && (
-            <button onClick={onStart} style={{
-              padding: '7px 16px', background: '#6366f1', border: 'none',
-              borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>▶ Run</button>
+            <button onClick={onStart} style={{ padding: '7px 16px', background: '#6366f1', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>▶ Run</button>
           )}
           {isSimulating && (
-            <button onClick={onStop} style={{
-              padding: '7px 16px', background: '#dc2626', border: 'none',
-              borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>⏹ Stop</button>
+            <button onClick={onStop} style={{ padding: '7px 16px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⏹ Stop</button>
           )}
           {isDone && (
-            <button onClick={onReset} style={{
-              padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266',
-              borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer',
-            }}>↩ Edit</button>
+            <button onClick={onReset} style={{ padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>↩ Edit</button>
           )}
           <button onClick={() => { setMenuOpen(v => !v); setPanel(null) }} style={{
             width: 36, height: 36, background: menuOpen ? '#3730a3' : '#2d3148',
@@ -163,9 +149,9 @@ export default function MobileLayout({
       {/* Dropdown menu */}
       {menuOpen && (
         <div style={{
-          position: 'absolute', top: 56, right: 12, zIndex: 200,
+          position: 'fixed', top: 56, right: 12, zIndex: 300,
           background: '#1a1d2e', border: '1px solid #2d3148', borderRadius: 10,
-          padding: 8, minWidth: 190, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          padding: 8, minWidth: 190, boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
         }}>
           <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>
             💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
@@ -187,8 +173,8 @@ export default function MobileLayout({
         </div>
       )}
 
-      {/* Canvas — fills available space */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}
+      {/* Canvas — shrinks when panel is open */}
+      <div style={{ flex: panel ? '0 0 40vh' : 1, minHeight: 0, overflow: 'auto', transition: 'flex 0.2s' }}
         onClick={() => setMenuOpen(false)}>
         {children}
       </div>
@@ -197,132 +183,90 @@ export default function MobileLayout({
 
       {/* Live stats */}
       {(isSimulating || isDone) && currentFrame && (
-        <div style={{ display:'flex', gap:16, padding:'6px 16px', background:'#131729', borderTop:'1px solid #2d3148', fontSize:12, flexShrink:0 }}>
-          <span style={{ color:'#64748b' }}>t=<span style={{ color:'#a78bfa' }}>{currentFrame.time}s</span></span>
-          <span style={{ color:'#64748b' }}>Active: <span style={{ color:'#a78bfa' }}>{currentFrame.active_count}/{currentFrame.total_count}</span></span>
-          {currentFrame.panic && <span style={{ color:'#f87171' }}>🚨 PANIC</span>}
+        <div style={{ display: 'flex', gap: 16, padding: '6px 16px', background: '#131729', borderTop: '1px solid #2d3148', fontSize: 12, flexShrink: 0 }}>
+          <span style={{ color: '#64748b' }}>t=<span style={{ color: '#a78bfa' }}>{currentFrame.time}s</span></span>
+          <span style={{ color: '#64748b' }}>Active: <span style={{ color: '#a78bfa' }}>{currentFrame.active_count}/{currentFrame.total_count}</span></span>
+          {currentFrame.panic && <span style={{ color: '#f87171' }}>🚨 PANIC</span>}
         </div>
       )}
 
       {/* Results */}
       {isDone && results && (
-        <div style={{ display:'flex', gap:16, padding:'8px 16px', background:'#131729', borderTop:'1px solid #2d3148', fontSize:12, flexShrink:0, flexWrap:'wrap' }}>
-          <span style={{ color: results.exit_rate_pct>=90?'#4ade80':results.exit_rate_pct>=60?'#fbbf24':'#f87171' }}>
+        <div style={{ display: 'flex', gap: 16, padding: '8px 16px', background: '#131729', borderTop: '1px solid #2d3148', fontSize: 12, flexShrink: 0, flexWrap: 'wrap' }}>
+          <span style={{ color: results.exit_rate_pct >= 90 ? '#4ade80' : results.exit_rate_pct >= 60 ? '#fbbf24' : '#f87171' }}>
             {results.exit_rate_pct}% exited
           </span>
-          <span style={{ color:'#64748b' }}>Avg: <span style={{ color:'#e2e8f0' }}>{results.avg_speed} m/s</span></span>
-          <span style={{ color:'#64748b' }}>Bottlenecks: <span style={{ color:'#fbbf24' }}>{results.bottleneck_count}</span></span>
+          <span style={{ color: '#64748b' }}>Avg: <span style={{ color: '#e2e8f0' }}>{results.avg_speed} m/s</span></span>
+          <span style={{ color: '#64748b' }}>Bottlenecks: <span style={{ color: '#fbbf24' }}>{results.bottleneck_count}</span></span>
         </div>
       )}
 
       {/* Overlay toggles */}
       {isDone && (heatMap || bottlenecks?.length > 0) && (
-        <div style={{ display:'flex', gap:10, padding:'6px 16px', background:'#1a1d2e', borderTop:'1px solid #2d3148', flexShrink:0 }}>
+        <div style={{ display: 'flex', gap: 10, padding: '6px 16px', background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
           {heatMap && (
-            <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:'#94a3b8', cursor:'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
               <input type="checkbox" checked={showHeatMap} onChange={e => setShowHeatMap(e.target.checked)} />Heat Map
             </label>
           )}
           {bottlenecks?.length > 0 && (
-            <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:'#94a3b8', cursor:'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
               <input type="checkbox" checked={showBottlenecks} onChange={e => setShowBottlenecks(e.target.checked)} />Bottlenecks
             </label>
           )}
         </div>
       )}
 
-      {/* Panic button during sim */}
+      {/* Panic button */}
       {isSimulating && (
-        <div style={{ padding:'8px 12px', background:'#1a1d2e', borderTop:'1px solid #2d3148', flexShrink:0 }}>
+        <div style={{ padding: '8px 12px', background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
           {!panicMode ? (
-            <button onClick={onTriggerPanic} style={{ width:'100%', padding:'10px', background:'#dc2626', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            <button onClick={onTriggerPanic} style={{ width: '100%', padding: '10px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               🚨 Trigger Panic / Evacuation
             </button>
           ) : (
-            <button onClick={onCalmDown} style={{ width:'100%', padding:'10px', background:'#2d3148', border:'1px solid #3d4266', borderRadius:8, color:'#e2e8f0', fontSize:13, cursor:'pointer' }}>
+            <button onClick={onCalmDown} style={{ width: '100%', padding: '10px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>
               🕊 Calm Down
             </button>
           )}
         </div>
       )}
 
-      {/* Bottom toolbar — two rows: tools row + action row */}
-      {!isSimulating && !isDone && (
-        <div style={{ background:'#1a1d2e', borderTop:'1px solid #2d3148', flexShrink:0 }}>
-          {/* Tools row */}
-          <div style={{ display:'flex', padding:'6px 8px', gap:4, overflowX:'auto' }}>
-            {TOOLS.map(tool => (
-              <button key={tool.id} onClick={() => setActiveTool(tool.id)} style={{
-                display:'flex', flexDirection:'column', alignItems:'center',
-                padding:'6px 10px', borderRadius:8, border:'1px solid',
-                borderColor: activeTool===tool.id ? '#6366f1' : 'transparent',
-                background: activeTool===tool.id ? '#3730a3' : 'transparent',
-                color: activeTool===tool.id ? 'white' : '#94a3b8',
-                fontSize:20, cursor:'pointer', flexShrink:0, minWidth:52,
-              }}>
-                {tool.icon}
-                <span style={{ fontSize:9, marginTop:2 }}>{tool.label}</span>
-              </button>
-            ))}
-          </div>
-          {/* Action row */}
-          <div style={{ display:'flex', gap:6, padding:'0 8px 8px', borderTop:'1px solid #1e2235' }}>
-            <button onClick={() => togglePanel('agents')} style={{
-              flex:1, padding:'8px', background: panel==='agents' ? '#3730a3' : '#2d3148',
-              border:'1px solid', borderColor: panel==='agents' ? '#6366f1' : '#3d4266',
-              borderRadius:8, color: panel==='agents' ? 'white' : '#e2e8f0',
-              fontSize:13, cursor:'pointer', fontWeight:500,
-            }}>🧑 Agent Types</button>
-            <button onClick={() => togglePanel('settings')} style={{
-              flex:1, padding:'8px', background: panel==='settings' ? '#3730a3' : '#2d3148',
-              border:'1px solid', borderColor: panel==='settings' ? '#6366f1' : '#3d4266',
-              borderRadius:8, color: panel==='settings' ? 'white' : '#e2e8f0',
-              fontSize:13, cursor:'pointer', fontWeight:500,
-            }}>⚙ Settings</button>
-          </div>
-        </div>
-      )}
-
-      {/* Slide-up panels */}
+      {/* Panel content — in flow, not absolute */}
       {panel && !isSimulating && !isDone && (
         <div style={{
-          borderTop:'1px solid #2d3148',
-          background:'#1a1d2e', borderTop:'1px solid #2d3148',
-          maxHeight:'60vh', overflowY:'auto',
+          flex: '0 0 auto', maxHeight: '50vh', overflowY: 'auto',
+          background: '#1a1d2e', borderTop: '1px solid #2d3148',
         }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px 10px', borderBottom:'1px solid #2d3148' }}>
-            <span style={{ fontSize:14, fontWeight:700, color:'#e2e8f0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 8px', borderBottom: '1px solid #2d3148', position: 'sticky', top: 0, background: '#1a1d2e', zIndex: 1 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>
               {panel === 'agents' ? '🧑 Agent Types' : '⚙ Settings'}
             </span>
-            <button onClick={() => setPanel(null)} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:18 }}>✕</button>
+            <button onClick={() => setPanel(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18 }}>✕</button>
           </div>
-
-          <div style={{ padding:16 }}>
+          <div style={{ padding: 16 }}>
             {panel === 'agents' && (
               <MobileAgentEditor agentTypes={agentTypes} setAgentTypes={setAgentTypes} />
             )}
-
             {panel === 'settings' && (
               <>
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ fontSize:11, color:'#64748b', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.8px' }}>Agents: {agentCount}</div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Agents: {agentCount}</div>
                   <input type="range" min={5} max={500} step={5} value={agentCount}
                     onChange={e => setAgentCount(Number(e.target.value))}
-                    style={{ width:'100%', accentColor:'#6366f1' }} />
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'#475569' }}>
-                    <span>5</span><span>500</span>
-                  </div>
+                    style={{ width: '100%', accentColor: '#6366f1' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569' }}><span>5</span><span>500</span></div>
                 </div>
                 <div>
-                  <div style={{ fontSize:11, color:'#64748b', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.8px' }}>Sim Speed</div>
-                  <div style={{ display:'flex', gap:6 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sim Speed</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
                     {SPEED_OPTIONS.map(opt => (
                       <button key={opt.value} onClick={() => setSimSpeed(opt.value)} style={{
-                        flex:1, padding:'9px', borderRadius:6, border:'1px solid',
-                        borderColor: simSpeed===opt.value ? '#6366f1' : '#2d3148',
-                        background: simSpeed===opt.value ? '#3730a3' : 'transparent',
-                        color: simSpeed===opt.value ? 'white' : '#64748b',
-                        fontSize:13, cursor:'pointer',
+                        flex: 1, padding: '9px', borderRadius: 6, border: '1px solid',
+                        borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
+                        background: simSpeed === opt.value ? '#3730a3' : 'transparent',
+                        color: simSpeed === opt.value ? 'white' : '#64748b',
+                        fontSize: 13, cursor: 'pointer',
                       }}>{opt.label}</button>
                     ))}
                   </div>
@@ -332,12 +276,51 @@ export default function MobileLayout({
           </div>
         </div>
       )}
+
+      {/* Bottom toolbar */}
+      {!isSimulating && !isDone && (
+        <div style={{ background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
+          {/* Tools row */}
+          <div style={{ display: 'flex', padding: '6px 8px', gap: 4, overflowX: 'auto' }}>
+            {TOOLS.map(tool => (
+              <button key={tool.id} onClick={() => setActiveTool(tool.id)} style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '6px 10px', borderRadius: 8, border: '1px solid',
+                borderColor: activeTool === tool.id ? '#6366f1' : 'transparent',
+                background: activeTool === tool.id ? '#3730a3' : 'transparent',
+                color: activeTool === tool.id ? 'white' : '#94a3b8',
+                fontSize: 20, cursor: 'pointer', flexShrink: 0, minWidth: 52,
+              }}>
+                {tool.icon}
+                <span style={{ fontSize: 9, marginTop: 2 }}>{tool.label}</span>
+              </button>
+            ))}
+          </div>
+          {/* Action buttons row */}
+          <div style={{ display: 'flex', gap: 6, padding: '0 8px 8px' }}>
+            <button onClick={() => togglePanel('agents')} style={{
+              flex: 1, padding: '8px', borderRadius: 8, border: '1px solid',
+              borderColor: panel === 'agents' ? '#6366f1' : '#3d4266',
+              background: panel === 'agents' ? '#3730a3' : '#2d3148',
+              color: panel === 'agents' ? 'white' : '#e2e8f0',
+              fontSize: 13, cursor: 'pointer', fontWeight: 500,
+            }}>🧑 Agent Types</button>
+            <button onClick={() => togglePanel('settings')} style={{
+              flex: 1, padding: '8px', borderRadius: 8, border: '1px solid',
+              borderColor: panel === 'settings' ? '#6366f1' : '#3d4266',
+              background: panel === 'settings' ? '#3730a3' : '#2d3148',
+              color: panel === 'settings' ? 'white' : '#e2e8f0',
+              fontSize: 13, cursor: 'pointer', fontWeight: 500,
+            }}>⚙ Settings</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 const menuBtnStyle = {
-  display:'block', width:'100%', padding:'10px 14px',
-  background:'transparent', border:'none', borderRadius:6,
-  color:'#e2e8f0', fontSize:13, cursor:'pointer', textAlign:'left',
+  display: 'block', width: '100%', padding: '10px 14px',
+  background: 'transparent', border: 'none', borderRadius: 6,
+  color: '#e2e8f0', fontSize: 13, cursor: 'pointer', textAlign: 'left',
 }
