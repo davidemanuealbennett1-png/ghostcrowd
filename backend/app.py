@@ -84,10 +84,7 @@ async def simulate(websocket: WebSocket):
         sim = SimulationEngine(env, dt=dt, panic=panic_mode)
         analytics = Analytics(env.width, env.height, grid_resolution=1.0)
 
-        # Fixed frame rate: 30fps = ~33ms per frame
-        # sim_speed controls steps per frame (how much simulation time passes per frame)
-        # 1x = 3 steps/frame, 2x = 6 steps/frame, 4x = 12 steps/frame, 0.5x = 2 steps/frame
-        FRAME_SLEEP = 0.033  # ~30fps constant
+        FRAME_SLEEP = 0.033
         BASE_STEPS_PER_FRAME = 3
 
         def get_steps_per_frame(speed):
@@ -131,12 +128,11 @@ async def simulate(websocket: WebSocket):
                 agent.reached_destination = False
                 agent.door_delay_remaining = 0.0
                 agent.in_door = False
+                agent._door_cooldown = {}
                 direction = agent.destination - agent.position
                 dist = np.linalg.norm(direction)
                 if dist > 0:
                     agent.velocity = (direction / dist) * agent.desired_speed * 0.1
-                    agent.waypoints = sim._build_waypoints(pos, dest)
-                    agent.current_waypoint_idx = 0
                 sim.agents.append(agent)
 
         if spawn_schedule:
@@ -156,7 +152,6 @@ async def simulate(websocket: WebSocket):
         step = 0
 
         while step < max_steps:
-            # Check for incoming messages (non-blocking)
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.0)
                 data = json.loads(msg)
@@ -172,7 +167,6 @@ async def simulate(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass
 
-            # Handle gradual spawning
             if spawn_schedule and spawned < agent_count:
                 current_time = sim.time
                 rate = 2.0
@@ -186,18 +180,13 @@ async def simulate(websocket: WebSocket):
                     spawned += to_spawn
                     spawn_queue -= to_spawn
 
-            # Run simulation steps
             for _ in range(steps_per_frame):
                 sim.step()
                 analytics.record_frame(sim.agents)
 
             step += steps_per_frame
-
-            # Send frame
             state = sim.get_state()
             await websocket.send_json({"type": "frame", **state})
-
-            # Fixed sleep for stable 30fps
             await asyncio.sleep(FRAME_SLEEP)
 
             if state["active_count"] == 0 and spawned >= agent_count:
