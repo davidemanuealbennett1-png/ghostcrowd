@@ -164,8 +164,14 @@ export default function App() {
   const stopSimulation = useCallback(() => {
   if (wsRef.current) {
     try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
-    wsRef.current.close()
   }
+  setPanicMode(false)
+  stopRecording()
+  // Give backend 1.5s to send partial results before forcing done state
+  setTimeout(() => {
+    setSimulationState(prev => prev === "running" ? "done" : prev)
+  }, 1500)
+}, [stopRecording])
   setPanicMode(false)
   stopRecording()
   setSimulationState("done")
