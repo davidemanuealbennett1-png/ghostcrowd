@@ -152,11 +152,11 @@ export default function App() {
     }))
 
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-      if (msg.type==="frame") { setCurrentFrame(msg); recordFrame(msg); if(msg.panic!==undefined)setPanicMode(msg.panic) }
-      else if (msg.type==="done") { setResults(msg.summary); setHeatMap(msg.heat_map); setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording() }
-      else if (msg.type==="error") { console.error(msg.message); setSimulationState(null); stopRecording() }
-    }
+  const msg = JSON.parse(event.data)
+  if (msg.type==="frame") { setCurrentFrame(msg); recordFrame(msg); if(msg.panic!==undefined)setPanicMode(msg.panic) }
+  else if (msg.type==="done") { setResults(msg.summary); setHeatMap(msg.heat_map); setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording() }
+  else if (msg.type==="error") { console.error(msg.message); setSimulationState(null); stopRecording() }
+}
     ws.onerror=()=>{setSimulationState(null);stopRecording()}
     ws.onclose=()=>{}
   }, [floorPlan,agentCount,limits,simSpeed,spawnMode,spawnSchedule,agentTypes,startRecording,recordFrame,stopRecording])
@@ -164,9 +164,11 @@ export default function App() {
   const stopSimulation = useCallback(() => {
   if (wsRef.current) {
     try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
+    wsRef.current.close()
   }
   setPanicMode(false)
   stopRecording()
+  setSimulationState("done")
 }, [stopRecording])
 
   const resetAll = useCallback(() => {

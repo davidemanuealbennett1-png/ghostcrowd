@@ -154,7 +154,7 @@ async def simulate(websocket: WebSocket):
 
         while step < max_steps:
             try:
-                msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.0)
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.001)
                 data = json.loads(msg)
                 if data.get("type") == "cancel":
                     cancelled = True
