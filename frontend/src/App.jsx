@@ -162,9 +162,14 @@ export default function App() {
   }, [floorPlan,agentCount,limits,simSpeed,spawnMode,spawnSchedule,agentTypes,startRecording,recordFrame,stopRecording])
 
   const stopSimulation = useCallback(() => {
-    if (wsRef.current) { try{wsRef.current.send(JSON.stringify({type:"cancel"}))}catch{} wsRef.current.close() }
-    setSimulationState(null); setPanicMode(false); stopRecording()
-  }, [stopRecording])
+  if (wsRef.current) {
+    try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
+    wsRef.current.close()
+  }
+  setPanicMode(false)
+  stopRecording()
+  setSimulationState("done")
+}, [stopRecording])
 
   const resetAll = useCallback(() => {
     if (wsRef.current) wsRef.current.close()

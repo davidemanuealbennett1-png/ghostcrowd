@@ -91,6 +91,7 @@ async def simulate(websocket: WebSocket):
             return max(1, round(BASE_STEPS_PER_FRAME * speed))
 
         steps_per_frame = get_steps_per_frame(sim_speed)
+        cancelled = False
 
         def spawn_custom(count):
             if not custom_agent_types:
@@ -156,6 +157,7 @@ async def simulate(websocket: WebSocket):
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.0)
                 data = json.loads(msg)
                 if data.get("type") == "cancel":
+                    cancelled = True
                     break
                 if "sim_speed" in data:
                     sim_speed = float(data["sim_speed"])
@@ -192,6 +194,7 @@ async def simulate(websocket: WebSocket):
             if state["active_count"] == 0 and spawned >= agent_count:
                 break
 
+        # Always send results — whether cancelled early or completed normally
         summary = analytics.get_summary(sim.agents)
         heat_map = analytics.get_normalized_heat_map()
         bottlenecks = analytics.get_bottlenecks(threshold=0.6)
@@ -201,6 +204,7 @@ async def simulate(websocket: WebSocket):
             "summary": summary,
             "heat_map": heat_map,
             "bottlenecks": bottlenecks,
+            "cancelled": cancelled,
         })
 
     except WebSocketDisconnect:
