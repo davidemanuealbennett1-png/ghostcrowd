@@ -280,6 +280,7 @@ export default function App() {
     simSpeed, setSimSpeed,
     results,
     playbackBar,
+    agentTypes, setAgentTypes,
   }
 
   if (isMobile) {

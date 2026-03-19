@@ -34,13 +34,10 @@ function MobileAgentEditor({ agentTypes, setAgentTypes }) {
 
   return (
     <div>
-      <div style={{ fontSize: 11, color: '#475569', marginBottom: 10 }}>
-        Set proportion to 0 to exclude. Auto-normalized.
-      </div>
       {agentTypes.map(type => (
         <div key={type.id} style={{ background: '#0f1117', border: '1px solid #2d3148', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: type.color, border: '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />
+            <div style={{ width: 18, height: 18, borderRadius: 4, background: type.color, flexShrink: 0 }} />
             <input value={type.name} onChange={e => updateType(type.id, 'name', e.target.value)}
               style={{ flex: 1, background: 'transparent', border: 'none', color: '#e2e8f0', fontSize: 13, fontWeight: 600, outline: 'none' }} />
             {agentTypes.length > 1 && (
@@ -82,11 +79,6 @@ function MobileAgentEditor({ agentTypes, setAgentTypes }) {
         border: '1px solid rgba(99,102,241,0.3)', borderRadius: 8,
         color: '#6366f1', fontSize: 13, cursor: 'pointer', fontWeight: 600,
       }}>+ Add agent type</button>
-      <div style={{ marginTop: 10, height: 6, borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-        {agentTypes.filter(t => t.proportion > 0).map(t => (
-          <div key={t.id} style={{ flex: t.proportion, background: t.color }} />
-        ))}
-      </div>
     </div>
   )
 }
@@ -115,36 +107,28 @@ export default function MobileLayout({
   const [panel, setPanel] = useState(null)
   const togglePanel = (name) => setPanel(p => p === name ? null : name)
 
+  // The layout is a vertical flex column:
+  // [top bar] [canvas - shrinks] [stats/results] [panel - when open] [toolbar]
+  // canvas has flex:1 when panel closed, flex:0 0 35vh when panel open
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f1117', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f1117', overflow: 'hidden' }}>
 
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#1a1d2e', borderBottom: '1px solid #2d3148', flexShrink: 0 }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#a78bfa' }}>👻 GhostCrowd</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!isDone && !isSimulating && (
-            <button onClick={onStart} style={{ padding: '7px 16px', background: '#6366f1', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>▶ Run</button>
-          )}
-          {isSimulating && (
-            <button onClick={onStop} style={{ padding: '7px 16px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⏹ Stop</button>
-          )}
-          {isDone && (
-            <button onClick={onReset} style={{ padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>↩ Edit</button>
-          )}
-          <button onClick={() => { setMenuOpen(v => !v); setPanel(null) }} style={{
-            width: 36, height: 36, background: menuOpen ? '#3730a3' : '#2d3148',
-            border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0',
-            fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>☰</button>
+          {!isDone && !isSimulating && <button onClick={onStart} style={{ padding: '7px 16px', background: '#6366f1', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>▶ Run</button>}
+          {isSimulating && <button onClick={onStop} style={{ padding: '7px 16px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⏹ Stop</button>}
+          {isDone && <button onClick={onReset} style={{ padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>↩ Edit</button>}
+          <button onClick={() => { setMenuOpen(v => !v); setPanel(null) }} style={{ width: 36, height: 36, background: menuOpen ? '#3730a3' : '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>☰</button>
         </div>
       </div>
 
-      {/* Hamburger dropdown */}
+      {/* Dropdown menu - fixed so it floats over canvas */}
       {menuOpen && (
-        <div style={{ position: 'fixed', top: 56, right: 12, zIndex: 300, background: '#1a1d2e', border: '1px solid #2d3148', borderRadius: 10, padding: 8, minWidth: 190, boxShadow: '0 8px 32px rgba(0,0,0,0.8)' }}>
-          <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>
-            💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
-          </button>
+        <div style={{ position: 'fixed', top: 56, right: 12, zIndex: 999, background: '#1a1d2e', border: '1px solid #2d3148', borderRadius: 10, padding: 8, minWidth: 190, boxShadow: '0 8px 32px rgba(0,0,0,0.8)' }}>
+          <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}</button>
           <button onClick={() => { onShare(); setMenuOpen(false) }} style={menuBtnStyle}>🔗 Share</button>
           <button onClick={() => { onUpgrade(); setMenuOpen(false) }} style={menuBtnStyle}>⬆ {tier === 'free' ? 'Upgrade' : `${tier.charAt(0).toUpperCase() + tier.slice(1)} plan`}</button>
           {isDone && heatMap && <>
@@ -152,16 +136,15 @@ export default function MobileLayout({
             <button onClick={() => { onExportPDF(); setMenuOpen(false) }} style={menuBtnStyle}>📄 Export PDF</button>
           </>}
           <div style={{ height: 1, background: '#2d3148', margin: '4px 0' }} />
-          {user ? (
-            <button onClick={() => { onSignOut(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#f87171' }}>Sign out</button>
-          ) : (
-            <button onClick={() => { onSignIn(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#a78bfa' }}>Sign in</button>
-          )}
+          {user
+            ? <button onClick={() => { onSignOut(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#f87171' }}>Sign out</button>
+            : <button onClick={() => { onSignIn(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#a78bfa' }}>Sign in</button>
+          }
         </div>
       )}
 
-      {/* Canvas — always flex:1, never shrinks */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }} onClick={() => setMenuOpen(false)}>
+      {/* Canvas — shrinks when panel open */}
+      <div style={{ flex: panel ? '0 0 35vh' : 1, minHeight: 0, overflow: 'hidden' }} onClick={() => setMenuOpen(false)}>
         {children}
       </div>
 
@@ -197,9 +180,47 @@ export default function MobileLayout({
       {isSimulating && (
         <div style={{ padding: '8px 12px', background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
           {!panicMode
-            ? <button onClick={onTriggerPanic} style={{ width: '100%', padding: '10px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🚨 Trigger Panic / Evacuation</button>
+            ? <button onClick={onTriggerPanic} style={{ width: '100%', padding: '10px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🚨 Trigger Panic</button>
             : <button onClick={onCalmDown} style={{ width: '100%', padding: '10px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>🕊 Calm Down</button>
           }
+        </div>
+      )}
+
+      {/* Inline panel — appears between canvas and toolbar, no fixed/absolute */}
+      {panel && !isSimulating && !isDone && (
+        <div style={{ flex: '1 1 auto', overflowY: 'auto', background: '#1a1d2e', borderTop: '2px solid #6366f1' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #2d3148', background: '#1a1d2e', position: 'sticky', top: 0, zIndex: 1 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>
+              {panel === 'agents' ? '🧑 Agent Types' : '⚙ Settings'}
+            </span>
+            <button onClick={() => setPanel(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
+          </div>
+          <div style={{ padding: 16 }}>
+            {panel === 'agents' && <MobileAgentEditor agentTypes={agentTypes} setAgentTypes={setAgentTypes} />}
+            {panel === 'settings' && (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Agents: {agentCount}</div>
+                  <input type="range" min={5} max={500} step={5} value={agentCount} onChange={e => setAgentCount(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569' }}><span>5</span><span>500</span></div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sim Speed</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {SPEED_OPTIONS.map(opt => (
+                      <button key={opt.value} onClick={() => setSimSpeed(opt.value)} style={{
+                        flex: 1, padding: '9px', borderRadius: 6, border: '1px solid',
+                        borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
+                        background: simSpeed === opt.value ? '#3730a3' : 'transparent',
+                        color: simSpeed === opt.value ? 'white' : '#64748b',
+                        fontSize: 13, cursor: 'pointer',
+                      }}>{opt.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -238,61 +259,6 @@ export default function MobileLayout({
             }}>⚙ Settings</button>
           </div>
         </div>
-      )}
-
-      {/* Modal overlay panel — slides up from bottom, canvas stays visible above */}
-      {panel && !isSimulating && !isDone && (
-        <>
-          {/* Tap backdrop to close */}
-          <div onClick={() => setPanel(null)} style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(0,0,0,0.5)' }} />
-          {/* Panel itself */}
-          <div style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
-            background: '#1a1d2e', borderTop: '2px solid #3d4266',
-            borderRadius: '16px 16px 0 0',
-            maxHeight: '65vh', overflowY: 'auto',
-            boxShadow: '0 -8px 32px rgba(0,0,0,0.6)',
-          }}>
-            {/* Handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: '#3d4266' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px 8px', borderBottom: '1px solid #2d3148' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>
-                {panel === 'agents' ? '🧑 Agent Types' : '⚙ Settings'}
-              </span>
-              <button onClick={() => setPanel(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18 }}>✕</button>
-            </div>
-            <div style={{ padding: 16 }}>
-              {panel === 'agents' && <MobileAgentEditor agentTypes={agentTypes} setAgentTypes={setAgentTypes} />}
-              {panel === 'settings' && (
-                <>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Agents: {agentCount}</div>
-                    <input type="range" min={5} max={500} step={5} value={agentCount}
-                      onChange={e => setAgentCount(Number(e.target.value))}
-                      style={{ width: '100%', accentColor: '#6366f1' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569' }}><span>5</span><span>500</span></div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sim Speed</div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {SPEED_OPTIONS.map(opt => (
-                        <button key={opt.value} onClick={() => setSimSpeed(opt.value)} style={{
-                          flex: 1, padding: '9px', borderRadius: 6, border: '1px solid',
-                          borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
-                          background: simSpeed === opt.value ? '#3730a3' : 'transparent',
-                          color: simSpeed === opt.value ? 'white' : '#64748b',
-                          fontSize: 13, cursor: 'pointer',
-                        }}>{opt.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </>
       )}
     </div>
   )
