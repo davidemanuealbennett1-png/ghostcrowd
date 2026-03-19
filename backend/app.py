@@ -6,7 +6,6 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-# Load .env file for local development
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -42,7 +41,8 @@ def build_environment(floor_plan: dict) -> Environment:
     height = floor_plan.get("height", 15)
     env = Environment(width=width, height=height)
     for w in floor_plan.get("walls", []):
-        env.add_wall(w["x1"], w["y1"], w["x2"], w["y2"])
+        is_door = bool(w.get("isDoor", False))
+        env.add_wall(w["x1"], w["y1"], w["x2"], w["y2"], is_door=is_door)
     for o in floor_plan.get("obstacles", []):
         env.add_obstacle(o["x"], o["y"], o["width"], o["height"])
     for z in floor_plan.get("spawn_zones", []):

@@ -48,8 +48,8 @@ class Environment:
         self.height = height
         self.walls = []
         self.obstacles = []
-        self.spawn_zones = []   # list of (x, y, w, h, weight)
-        self.exit_zones = []    # list of (x, y, w, h, weight)
+        self.spawn_zones = []
+        self.exit_zones = []
         self._add_boundary_walls()
 
     def _add_boundary_walls(self):
@@ -59,8 +59,11 @@ class Environment:
         self.walls.append(Wall(w, h, 0, h))
         self.walls.append(Wall(0, h, 0, 0))
 
-    def add_wall(self, x1, y1, x2, y2):
-        self.walls.append(Wall(x1, y1, x2, y2))
+    def add_wall(self, x1, y1, x2, y2, is_door=False):
+        # Doors are visual only — they don't add physics walls
+        # This creates a passable gap in the layout
+        if not is_door:
+            self.walls.append(Wall(x1, y1, x2, y2))
 
     def add_obstacle(self, x, y, width, height):
         self.obstacles.append(RectObstacle(x, y, width, height))

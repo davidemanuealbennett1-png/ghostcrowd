@@ -26,7 +26,7 @@ export default function Toolbar({
     if (confirm("Clear all walls and objects?")) {
       setUndoStack(s => [...s, floorPlan])
       setRedoStack([])
-      setFloorPlan(fp => ({ ...fp, walls: [], obstacles: [] }))
+      setFloorPlan(fp => ({ ...fp, walls: [], obstacles: [], spawn_zones: [], exit_zones: [] }))
     }
   }
 
@@ -84,12 +84,12 @@ export default function Toolbar({
       <div className="tool-divider" />
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <button className="tool-btn" onClick={clearAll} disabled={disabled} title="Clear walls & objects">🧹</button>
+        <button className="tool-btn" onClick={clearAll} disabled={disabled} title="Clear everything">🧹</button>
         <div className="tool-label">Clear</div>
       </div>
 
-      {/* Templates */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+      {/* Templates — fixed position popup */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         <button
           className={`tool-btn ${showTemplates ? "active" : ""}`}
           onClick={() => setShowTemplates(v => !v)}
@@ -100,20 +100,31 @@ export default function Toolbar({
 
         {showTemplates && (
           <div style={{
-            position: "absolute", left: "56px", top: 0,
-            background: "#1a1d2e", border: "1px solid #2d3148",
-            borderRadius: 8, padding: 8, width: 200, zIndex: 100,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            position: "fixed",
+            left: "72px",
+            top: "220px",
+            background: "#1a1d2e",
+            border: "1px solid #2d3148",
+            borderRadius: 8,
+            padding: 8,
+            width: 210,
+            zIndex: 500,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            maxHeight: "60vh",
+            overflowY: "auto",
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, padding: "0 4px" }}>
               Templates
             </div>
             {TEMPLATES.map(t => (
-              <button key={t.id} onClick={() => applyTemplate(t)} style={{
-                display: "flex", flexDirection: "column", width: "100%",
-                padding: "8px 10px", background: "transparent", border: "none",
-                borderRadius: 6, cursor: "pointer", textAlign: "left",
-              }}
+              <button
+                key={t.id}
+                onClick={() => applyTemplate(t)}
+                style={{
+                  display: "flex", flexDirection: "column", width: "100%",
+                  padding: "8px 10px", background: "transparent", border: "none",
+                  borderRadius: 6, cursor: "pointer", textAlign: "left",
+                }}
                 onMouseEnter={e => e.currentTarget.style.background = "#2d3148"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
