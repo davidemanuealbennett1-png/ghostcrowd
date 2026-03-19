@@ -164,11 +164,10 @@ export default function App() {
   const stopSimulation = useCallback(() => {
   if (wsRef.current) {
     try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
-    wsRef.current.close()
   }
   setPanicMode(false)
   stopRecording()
-  setSimulationState("done")
+  // Don't close the WS or set state here — wait for backend to send "done" with results
 }, [stopRecording])
 
   const resetAll = useCallback(() => {
