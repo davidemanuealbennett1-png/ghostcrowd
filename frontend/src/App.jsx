@@ -167,14 +167,9 @@ export default function App() {
   }
   setPanicMode(false)
   stopRecording()
-  // Give backend 1.5s to send partial results before forcing done state
   setTimeout(() => {
     setSimulationState(prev => prev === "running" ? "done" : prev)
   }, 1500)
-}, [stopRecording])
-  setPanicMode(false)
-  stopRecording()
-  setSimulationState("done")
 }, [stopRecording])
 
   const resetAll = useCallback(() => {
