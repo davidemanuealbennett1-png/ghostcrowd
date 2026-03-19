@@ -286,7 +286,7 @@ export default function MobileLayout({
       {/* Slide-up panels */}
       {panel && !isSimulating && !isDone && (
         <div style={{
-          position:'absolute', bottom:0, left:0, right:0, zIndex:100,
+          borderTop:'1px solid #2d3148',
           background:'#1a1d2e', borderTop:'1px solid #2d3148',
           maxHeight:'60vh', overflowY:'auto',
         }}>
