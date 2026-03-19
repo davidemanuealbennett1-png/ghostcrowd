@@ -167,7 +167,6 @@ export default function App() {
   }
   setPanicMode(false)
   stopRecording()
-  // Don't close the WS or set state here — wait for backend to send "done" with results
 }, [stopRecording])
 
   const resetAll = useCallback(() => {
