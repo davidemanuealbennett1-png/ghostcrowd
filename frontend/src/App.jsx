@@ -57,6 +57,7 @@ export default function App() {
   const [spawnSchedule, setSpawnSchedule] = useState([])
   const [agentTypes, setAgentTypes] = useState(DEFAULT_PRESETS)
   const [panicMode, setPanicMode] = useState(false)
+  const [zoom, setZoom] = useState(1.0)
 
   const wsRef = useRef(null)
 
@@ -82,58 +83,54 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (upgradeStatus) {
-      window.history.replaceState({}, '', '/app')
-      setTimeout(() => setUpgradeStatus(null), 4000)
-    }
+    if (upgradeStatus) { window.history.replaceState({}, '', '/app'); setTimeout(() => setUpgradeStatus(null), 4000) }
   }, [])
 
+  // Desktop keyboard shortcuts
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT') return
       const isSim = simulationState === "running"
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSim) {
+      if ((e.ctrlKey||e.metaKey) && e.key==='z' && !isSim) {
         e.preventDefault()
-        if (undoStack.length === 0) return
-        const prev = undoStack[undoStack.length - 1]
-        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0, -1)); setFloorPlan(prev)
+        if (undoStack.length===0) return
+        const prev=undoStack[undoStack.length-1]
+        setRedoStack(s=>[...s,floorPlan]); setUndoStack(s=>s.slice(0,-1)); setFloorPlan(prev)
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSim) {
+      if ((e.ctrlKey||e.metaKey) && (e.key==='y'||(e.shiftKey&&e.key==='z')) && !isSim) {
         e.preventDefault()
-        if (redoStack.length === 0) return
-        const next = redoStack[redoStack.length - 1]
-        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0, -1)); setFloorPlan(next)
+        if (redoStack.length===0) return
+        const next=redoStack[redoStack.length-1]
+        setUndoStack(s=>[...s,floorPlan]); setRedoStack(s=>s.slice(0,-1)); setFloorPlan(next)
       }
       if (!isSim) {
-        if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
-        if (e.key === 'd' || e.key === 'D') setActiveTool('door')
-        if (e.key === 'r' || e.key === 'R') setActiveTool('obstacle')
-        if (e.key === 's' || e.key === 'S') setActiveTool('select')
-        if (e.key === 'e' || e.key === 'E') setActiveTool('erase')
+        if (e.key==='w'||e.key==='W') setActiveTool('wall')
+        if (e.key==='d'||e.key==='D') setActiveTool('door')
+        if (e.key==='r'||e.key==='R') setActiveTool('obstacle')
+        if (e.key==='s'||e.key==='S') setActiveTool('select')
+        if (e.key==='e'||e.key==='E') setActiveTool('erase')
       }
+      // Zoom shortcuts
+      if ((e.ctrlKey||e.metaKey) && e.key==='+') { e.preventDefault(); setZoom(z=>Math.min(2.0,Math.round((z+0.1)*10)/10)) }
+      if ((e.ctrlKey||e.metaKey) && e.key==='-') { e.preventDefault(); setZoom(z=>Math.max(0.3,Math.round((z-0.1)*10)/10)) }
+      if ((e.ctrlKey||e.metaKey) && e.key==='0') { e.preventDefault(); setZoom(1.0) }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [undoStack, redoStack, floorPlan, simulationState])
 
   const handleSpeedChange = useCallback((newSpeed) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "speed", sim_speed: newSpeed }))
-    }
+    if (wsRef.current?.readyState===WebSocket.OPEN) wsRef.current.send(JSON.stringify({type:"speed",sim_speed:newSpeed}))
   }, [])
 
   const handleTriggerPanic = useCallback(() => {
     setPanicMode(true)
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "panic" }))
-    }
+    if (wsRef.current?.readyState===WebSocket.OPEN) wsRef.current.send(JSON.stringify({type:"panic"}))
   }, [])
 
   const handleCalmDown = useCallback(() => {
     setPanicMode(false)
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "calm" }))
-    }
+    if (wsRef.current?.readyState===WebSocket.OPEN) wsRef.current.send(JSON.stringify({type:"calm"}))
   }, [])
 
   const startSimulation = useCallback(() => {
@@ -141,8 +138,7 @@ export default function App() {
     if (wsRef.current) wsRef.current.close()
     setCurrentFrame(null); setResults(null); setHeatMap(null)
     setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
-    setSimulationState("running")
-    startRecording()
+    setSimulationState("running"); startRecording()
 
     const ws = new WebSocket(`${WS_URL}/simulate`)
     wsRef.current = ws
@@ -151,32 +147,22 @@ export default function App() {
       agent_count: cappedAgents, floor_plan: floorPlan,
       dt: 0.05, steps_per_frame: 3, max_steps: 3000,
       sim_speed: simSpeed,
-      spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
+      spawn_schedule: spawnMode==='gradual'&&spawnSchedule.length>0 ? spawnSchedule : null,
       panic_mode: false, custom_agent_types: agentTypes,
     }))
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-      if (msg.type === "frame") {
-        setCurrentFrame(msg); recordFrame(msg)
-        if (msg.panic !== undefined) setPanicMode(msg.panic)
-      } else if (msg.type === "done") {
-        setResults(msg.summary); setHeatMap(msg.heat_map)
-        setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording()
-      } else if (msg.type === "error") {
-        console.error("Simulation error:", msg.message); setSimulationState(null); stopRecording()
-      }
+      if (msg.type==="frame") { setCurrentFrame(msg); recordFrame(msg); if(msg.panic!==undefined)setPanicMode(msg.panic) }
+      else if (msg.type==="done") { setResults(msg.summary); setHeatMap(msg.heat_map); setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording() }
+      else if (msg.type==="error") { console.error(msg.message); setSimulationState(null); stopRecording() }
     }
-
-    ws.onerror = () => { setSimulationState(null); stopRecording() }
-    ws.onclose = () => {}
-  }, [floorPlan, agentCount, limits, simSpeed, spawnMode, spawnSchedule, agentTypes, startRecording, recordFrame, stopRecording])
+    ws.onerror=()=>{setSimulationState(null);stopRecording()}
+    ws.onclose=()=>{}
+  }, [floorPlan,agentCount,limits,simSpeed,spawnMode,spawnSchedule,agentTypes,startRecording,recordFrame,stopRecording])
 
   const stopSimulation = useCallback(() => {
-    if (wsRef.current) {
-      try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
-      wsRef.current.close()
-    }
+    if (wsRef.current) { try{wsRef.current.send(JSON.stringify({type:"cancel"}))}catch{} wsRef.current.close() }
     setSimulationState(null); setPanicMode(false); stopRecording()
   }, [stopRecording])
 
@@ -188,34 +174,28 @@ export default function App() {
   }, [stopPlayback])
 
   const exportHeatMap = useCallback(() => {
-    const canvas = document.querySelector("canvas")
-    if (!canvas) return
+    const canvas = document.querySelector("canvas"); if(!canvas)return
     const link = document.createElement("a")
-    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
-    link.href = canvas.toDataURL("image/png"); link.click()
+    link.download=`ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g,'-')}.png`
+    link.href=canvas.toDataURL("image/png"); link.click()
   }, [floorPlanName])
 
   const exportPDF = useCallback(async () => {
     if (!canUse('pdf')) { setShowPricing(true); return }
     const canvas = document.querySelector("canvas")
-    await generatePDFReport({ floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canvasElement: canvas })
-  }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canUse])
+    await generatePDFReport({floorPlanName,results,bottlenecks,agentTypes,agentCount,floorPlan,canvasElement:canvas})
+  }, [floorPlanName,results,bottlenecks,agentTypes,agentCount,floorPlan,canUse])
 
   const saveFloorPlan = useCallback(async () => {
     if (!user) { setShowAuthModal(true); return }
     setSaveStatus('saving')
-    const existing = await supabase.from('floor_plans').select('id').eq('user_id', user.id).eq('name', floorPlanName).single()
+    const existing = await supabase.from('floor_plans').select('id').eq('user_id',user.id).eq('name',floorPlanName).single()
     let error
-    if (existing.data) {
-      const res = await supabase.from('floor_plans').update({ data: floorPlan, updated_at: new Date().toISOString() }).eq('id', existing.data.id)
-      error = res.error
-    } else {
-      const res = await supabase.from('floor_plans').insert({ user_id: user.id, name: floorPlanName, data: floorPlan })
-      error = res.error
-    }
-    setSaveStatus(error ? 'error' : 'saved')
-    setTimeout(() => setSaveStatus(null), 2000)
-  }, [user, floorPlan, floorPlanName])
+    if (existing.data) { const res=await supabase.from('floor_plans').update({data:floorPlan,updated_at:new Date().toISOString()}).eq('id',existing.data.id); error=res.error }
+    else { const res=await supabase.from('floor_plans').insert({user_id:user.id,name:floorPlanName,data:floorPlan}); error=res.error }
+    setSaveStatus(error?'error':'saved')
+    setTimeout(()=>setSaveStatus(null),2000)
+  }, [user,floorPlan,floorPlanName])
 
   const signOut = async () => { await supabase.auth.signOut(); setUser(null) }
 
@@ -223,7 +203,7 @@ export default function App() {
   const isDone = simulationState === "done"
   const activeFrame = playback ? playbackFrame : currentFrame
 
-  const canvas = isSimulating || isDone ? (
+  const canvasEl = isSimulating || isDone ? (
     <SimulationView
       floorPlan={floorPlan} frame={activeFrame}
       heatMap={showHeatMap ? heatMap : null}
@@ -241,96 +221,91 @@ export default function App() {
   )
 
   const playbackBar = isDone && hasRecording ? (
-    <div style={{
-      background: '#1a1d2e', borderTop: '1px solid #2d3148',
-      padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
-    }}>
-      {!playback ? (
-        <button onClick={() => startPlayback(simSpeed)} style={{
-          padding: '5px 12px', background: '#3730a3', border: '1px solid #6366f1',
-          borderRadius: 6, color: 'white', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-        }}>▶ Replay</button>
-      ) : (
-        <button onClick={stopPlayback} style={{
-          padding: '5px 12px', background: '#1e2235', border: '1px solid #2d3148',
-          borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-        }}>⏹ Stop</button>
-      )}
-      <input type="range" min={0} max={100} value={playbackProgress}
-        onChange={e => seekPlayback(Number(e.target.value))}
-        style={{ flex: 1, accentColor: '#6366f1' }} />
-      <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{frameCount}f</span>
+    <div style={{ background:'#1a1d2e',borderTop:'1px solid #2d3148',padding:'8px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
+      {!playback
+        ? <button onClick={()=>startPlayback(simSpeed)} style={{padding:'5px 12px',background:'#3730a3',border:'1px solid #6366f1',borderRadius:6,color:'white',fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>▶ Replay</button>
+        : <button onClick={stopPlayback} style={{padding:'5px 12px',background:'#1e2235',border:'1px solid #2d3148',borderRadius:6,color:'#e2e8f0',fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>⏹ Stop</button>
+      }
+      <input type="range" min={0} max={100} value={playbackProgress} onChange={e=>seekPlayback(Number(e.target.value))} style={{flex:1,accentColor:'#6366f1'}} />
+      <span style={{fontSize:11,color:'#64748b',whiteSpace:'nowrap'}}>{frameCount}f</span>
     </div>
   ) : null
 
   const sharedProps = {
     activeTool, setActiveTool,
-    floorPlan, agentCount, setAgentCount,
+    floorPlan, setFloorPlan, agentCount, setAgentCount,
     isSimulating, isDone,
     onStart: startSimulation, onStop: stopSimulation, onReset: resetAll,
     currentFrame: activeFrame,
-    user, onSignIn: () => setShowAuthModal(true), onSignOut: signOut,
+    user, onSignIn: ()=>setShowAuthModal(true), onSignOut: signOut,
     onSave: saveFloorPlan, saveStatus,
-    onShare: () => {},
-    onUpgrade: () => setShowPricing(true), tier,
+    onShare: ()=>{},
+    onUpgrade: ()=>setShowPricing(true), tier,
     onExport: exportHeatMap, onExportPDF: exportPDF,
     heatMap, showHeatMap, setShowHeatMap,
     bottlenecks, showBottlenecks, setShowBottlenecks,
     panicMode, onTriggerPanic: handleTriggerPanic, onCalmDown: handleCalmDown,
     simSpeed, setSimSpeed,
-    results,
-    playbackBar,
+    results, playbackBar,
     agentTypes, setAgentTypes,
+    floorPlanName, setFloorPlanName,
+    undoStack, setUndoStack, redoStack, setRedoStack,
+    zoom, setZoom,
   }
 
   if (isMobile) {
     return (
       <>
-        <MobileLayout {...sharedProps}>
-          {canvas}
-        </MobileLayout>
-        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
-        {showPricing && <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)} onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />}
+        <MobileLayout {...sharedProps}>{canvasEl}</MobileLayout>
+        {showAuthModal && <AuthModal onClose={()=>setShowAuthModal(false)} onAuth={setUser} />}
+        {showPricing && <PricingModal user={user} currentTier={tier} onClose={()=>setShowPricing(false)} onRequestAuth={()=>{setShowPricing(false);setShowAuthModal(true)}} />}
       </>
     )
   }
 
-  // ── Desktop layout ──
+  // Desktop layout
   return (
     <div className="app">
-      {upgradeStatus === 'success' && (
-        <div style={{
-          position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
-          borderRadius: 8, padding: '10px 20px', zIndex: 200, fontSize: 13, color: '#4ade80',
-        }}>🎉 Upgrade successful! Welcome to {tier}.</div>
+      {upgradeStatus==='success' && (
+        <div style={{position:'fixed',top:70,left:'50%',transform:'translateX(-50%)',background:'rgba(74,222,128,0.15)',border:'1px solid #4ade80',borderRadius:8,padding:'10px 20px',zIndex:200,fontSize:13,color:'#4ade80'}}>
+          🎉 Upgrade successful! Welcome to {tier}.
+        </div>
       )}
 
       <header className="app-header">
         <div className="logo">👻 GhostCrowd</div>
         {!isSimulating && !isDone && (
-          <input className="plan-name-input" value={floorPlanName} onChange={e => setFloorPlanName(e.target.value)} placeholder="Untitled" />
+          <input className="plan-name-input" value={floorPlanName} onChange={e=>setFloorPlanName(e.target.value)} placeholder="Untitled" />
         )}
-        {(isSimulating || isDone) && <div className="plan-name-display">{floorPlanName}</div>}
+        {(isSimulating||isDone) && <div className="plan-name-display">{floorPlanName}</div>}
+
+        {/* Zoom controls */}
+        {!isSimulating && !isDone && (
+          <div style={{display:'flex',alignItems:'center',gap:4,marginLeft:8}}>
+            <button onClick={()=>setZoom(z=>Math.max(0.3,Math.round((z-0.1)*10)/10))} style={{width:24,height:24,background:'#2d3148',border:'1px solid #3d4266',borderRadius:4,color:'#e2e8f0',fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+            <span style={{fontSize:11,color:'#64748b',minWidth:36,textAlign:'center'}}>{Math.round(zoom*100)}%</span>
+            <button onClick={()=>setZoom(z=>Math.min(2.0,Math.round((z+0.1)*10)/10))} style={{width:24,height:24,background:'#2d3148',border:'1px solid #3d4266',borderRadius:4,color:'#e2e8f0',fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+            {zoom!==1.0 && <button onClick={()=>setZoom(1.0)} style={{fontSize:10,color:'#6366f1',background:'none',border:'none',cursor:'pointer'}}>reset</button>}
+          </div>
+        )}
+
         <div className="header-actions">
           {!isSimulating && (
             <>
               <button className="header-btn" onClick={saveFloorPlan}>
-                {saveStatus === 'saving' ? '...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '✗ Error' : '💾 Save'}
+                {saveStatus==='saving'?'...':saveStatus==='saved'?'✓ Saved':saveStatus==='error'?'✗ Error':'💾 Save'}
               </button>
-              <ShareButton user={user} floorPlan={floorPlan} floorPlanName={floorPlanName} onRequestAuth={() => setShowAuthModal(true)} />
-              {user && <button className="header-btn" onClick={() => setShowSavedPlans(true)}>📁 My Plans</button>}
+              <ShareButton user={user} floorPlan={floorPlan} floorPlanName={floorPlanName} onRequestAuth={()=>setShowAuthModal(true)} />
+              {user && <button className="header-btn" onClick={()=>setShowSavedPlans(true)}>📁 My Plans</button>}
             </>
           )}
-          <button className="header-btn" onClick={() => setShowPricing(true)}
-            style={{ borderColor: tier !== 'free' ? 'rgba(99,102,241,0.5)' : '#2d3148', color: tier !== 'free' ? '#a5b4fc' : '#64748b' }}>
-            {tier === 'free' ? '⬆ Upgrade' : `✨ ${tier.charAt(0).toUpperCase() + tier.slice(1)}`}
+          <button className="header-btn" onClick={()=>setShowPricing(true)} style={{borderColor:tier!=='free'?'rgba(99,102,241,0.5)':'#2d3148',color:tier!=='free'?'#a5b4fc':'#64748b'}}>
+            {tier==='free'?'⬆ Upgrade':`✨ ${tier.charAt(0).toUpperCase()+tier.slice(1)}`}
           </button>
-          {user ? (
-            <button className="header-btn" onClick={signOut}>Sign out</button>
-          ) : (
-            <button className="header-btn header-btn-accent" onClick={() => setShowAuthModal(true)}>Sign in</button>
-          )}
+          {user
+            ? <button className="header-btn" onClick={signOut}>Sign out</button>
+            : <button className="header-btn header-btn-accent" onClick={()=>setShowAuthModal(true)}>Sign in</button>
+          }
         </div>
       </header>
 
@@ -346,8 +321,10 @@ export default function App() {
           />
         </aside>
 
-        <main className="canvas-area" style={{ flexDirection: 'column', gap: 0 }}>
-          {canvas}
+        <main className="canvas-area" style={{flexDirection:'column',gap:0,overflow:'auto'}}>
+          <div style={{transform:`scale(${zoom})`,transformOrigin:'top center',display:'inline-block'}}>
+            {canvasEl}
+          </div>
           {playbackBar}
         </main>
 
@@ -367,22 +344,15 @@ export default function App() {
             floorPlan={floorPlan} setFloorPlan={setFloorPlan}
             onSpeedChange={handleSpeedChange}
             panicMode={panicMode} onTriggerPanic={handleTriggerPanic} onCalmDown={handleCalmDown}
-            tier={tier} limits={limits} onUpgrade={() => setShowPricing(true)}
+            tier={tier} limits={limits} onUpgrade={()=>setShowPricing(true)}
           />
           {isDone && results && <ResultsPanel results={results} />}
         </aside>
       </div>
 
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
-      {showSavedPlans && (
-        <SavedPlans user={user}
-          onLoad={(data, name) => { setFloorPlan(data); setFloorPlanName(name) }}
-          onClose={() => setShowSavedPlans(false)} />
-      )}
-      {showPricing && (
-        <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)}
-          onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />
-      )}
+      {showAuthModal && <AuthModal onClose={()=>setShowAuthModal(false)} onAuth={setUser} />}
+      {showSavedPlans && <SavedPlans user={user} onLoad={(data,name)=>{setFloorPlan(data);setFloorPlanName(name)}} onClose={()=>setShowSavedPlans(false)} />}
+      {showPricing && <PricingModal user={user} currentTier={tier} onClose={()=>setShowPricing(false)} onRequestAuth={()=>{setShowPricing(false);setShowAuthModal(true)}} />}
     </div>
   )
 }

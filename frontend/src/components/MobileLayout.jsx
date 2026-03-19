@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { TEMPLATES } from '../utils/templates'
 
 const TOOLS = [
   { id: "wall", icon: "📏", label: "Wall" },
@@ -6,6 +7,7 @@ const TOOLS = [
   { id: "obstacle", icon: "⬛", label: "Table" },
   { id: "spawn", icon: "🟢", label: "Spawn" },
   { id: "exit", icon: "🔴", label: "Exit" },
+  { id: "select", icon: "↖", label: "Select" },
   { id: "erase", icon: "🗑", label: "Erase" },
 ]
 
@@ -86,7 +88,7 @@ function MobileAgentEditor({ agentTypes, setAgentTypes }) {
 export default function MobileLayout({
   children,
   activeTool, setActiveTool,
-  floorPlan, agentCount, setAgentCount,
+  floorPlan, setFloorPlan, agentCount, setAgentCount,
   isSimulating, isDone,
   onStart, onStop, onReset,
   currentFrame,
@@ -102,33 +104,91 @@ export default function MobileLayout({
   results,
   playbackBar,
   agentTypes, setAgentTypes,
+  floorPlanName, setFloorPlanName,
+  undoStack, setUndoStack, redoStack, setRedoStack,
+  zoom, setZoom,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [panel, setPanel] = useState(null)
+  const [editingName, setEditingName] = useState(false)
+  const nameInputRef = useRef(null)
+
   const togglePanel = (name) => setPanel(p => p === name ? null : name)
 
-  // The layout is a vertical flex column:
-  // [top bar] [canvas - shrinks] [stats/results] [panel - when open] [toolbar]
-  // canvas has flex:1 when panel closed, flex:0 0 35vh when panel open
+  const undo = () => {
+    if (undoStack.length === 0) return
+    const prev = undoStack[undoStack.length - 1]
+    setRedoStack(s => [...s, floorPlan])
+    setUndoStack(s => s.slice(0, -1))
+    setFloorPlan(prev)
+  }
+
+  const redo = () => {
+    if (redoStack.length === 0) return
+    const next = redoStack[redoStack.length - 1]
+    setUndoStack(s => [...s, floorPlan])
+    setRedoStack(s => s.slice(0, -1))
+    setFloorPlan(next)
+  }
+
+  const applyTemplate = (template) => {
+    setUndoStack(s => [...s, floorPlan])
+    setRedoStack([])
+    setFloorPlan(template.floorPlan)
+    setPanel(null)
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f1117', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f1117', overflow: 'hidden', position: 'relative' }}>
 
       {/* Top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#1a1d2e', borderBottom: '1px solid #2d3148', flexShrink: 0 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#a78bfa' }}>👻 GhostCrowd</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!isDone && !isSimulating && <button onClick={onStart} style={{ padding: '7px 16px', background: '#6366f1', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>▶ Run</button>}
-          {isSimulating && <button onClick={onStop} style={{ padding: '7px 16px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⏹ Stop</button>}
-          {isDone && <button onClick={onReset} style={{ padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>↩ Edit</button>}
-          <button onClick={() => { setMenuOpen(v => !v); setPanel(null) }} style={{ width: 36, height: 36, background: menuOpen ? '#3730a3' : '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>☰</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#1a1d2e', borderBottom: '1px solid #2d3148', flexShrink: 0, gap: 8 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>👻</div>
+
+        {/* Editable floor plan name */}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            value={floorPlanName}
+            onChange={e => setFloorPlanName(e.target.value)}
+            onBlur={() => setEditingName(false)}
+            onKeyDown={e => { if (e.key === 'Enter') setEditingName(false) }}
+            autoFocus
+            style={{ flex: 1, background: '#0f1117', border: '1px solid #6366f1', borderRadius: 6, color: '#e2e8f0', fontSize: 13, padding: '4px 8px', outline: 'none' }}
+          />
+        ) : (
+          <div
+            onClick={() => { if (!isSimulating && !isDone) setEditingName(true) }}
+            style={{ flex: 1, fontSize: 13, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: isSimulating || isDone ? 'default' : 'text', padding: '4px 0' }}
+          >
+            {floorPlanName || 'Untitled'}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          {!isDone && !isSimulating && (
+            <button onClick={onStart} style={{ padding: '7px 14px', background: '#6366f1', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>▶ Run</button>
+          )}
+          {isSimulating && (
+            <button onClick={onStop} style={{ padding: '7px 14px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>⏹ Stop</button>
+          )}
+          {isDone && (
+            <button onClick={onReset} style={{ padding: '7px 14px', background: '#2d3148', border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer' }}>↩ Edit</button>
+          )}
+          <button onClick={() => { setMenuOpen(v => !v); setPanel(null) }} style={{
+            width: 36, height: 36, background: menuOpen ? '#3730a3' : '#2d3148',
+            border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0',
+            fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>☰</button>
         </div>
       </div>
 
-      {/* Dropdown menu - fixed so it floats over canvas */}
+      {/* Hamburger dropdown */}
       {menuOpen && (
         <div style={{ position: 'fixed', top: 56, right: 12, zIndex: 999, background: '#1a1d2e', border: '1px solid #2d3148', borderRadius: 10, padding: 8, minWidth: 190, boxShadow: '0 8px 32px rgba(0,0,0,0.8)' }}>
-          <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}</button>
+          <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>
+            💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+          </button>
           <button onClick={() => { onShare(); setMenuOpen(false) }} style={menuBtnStyle}>🔗 Share</button>
           <button onClick={() => { onUpgrade(); setMenuOpen(false) }} style={menuBtnStyle}>⬆ {tier === 'free' ? 'Upgrade' : `${tier.charAt(0).toUpperCase() + tier.slice(1)} plan`}</button>
           {isDone && heatMap && <>
@@ -143,9 +203,11 @@ export default function MobileLayout({
         </div>
       )}
 
-      {/* Canvas — shrinks when panel open */}
-      <div style={{ flex: panel ? '0 0 35vh' : 1, minHeight: 0, overflow: 'hidden' }} onClick={() => setMenuOpen(false)}>
-        {children}
+      {/* Canvas */}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }} onClick={() => setMenuOpen(false)}>
+        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100/zoom}%` }}>
+          {children}
+        </div>
       </div>
 
       {playbackBar}
@@ -186,25 +248,47 @@ export default function MobileLayout({
         </div>
       )}
 
-      {/* Inline panel — appears between canvas and toolbar, no fixed/absolute */}
+      {/* Panel content */}
       {panel && !isSimulating && !isDone && (
-        <div style={{ flex: '1 1 auto', overflowY: 'auto', background: '#1a1d2e', borderTop: '2px solid #6366f1' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #2d3148', background: '#1a1d2e', position: 'sticky', top: 0, zIndex: 1 }}>
+        <div style={{ flex: '0 0 auto', maxHeight: '55vh', overflowY: 'auto', background: '#1a1d2e', borderTop: '2px solid #6366f1' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 8px', borderBottom: '1px solid #2d3148', position: 'sticky', top: 0, background: '#1a1d2e', zIndex: 1 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>
-              {panel === 'agents' ? '🧑 Agent Types' : '⚙ Settings'}
+              {panel === 'agents' ? '🧑 Agent Types' : panel === 'settings' ? '⚙ Settings' : panel === 'templates' ? '📐 Templates' : ''}
             </span>
-            <button onClick={() => setPanel(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
+            <button onClick={() => setPanel(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 20 }}>✕</button>
           </div>
           <div style={{ padding: 16 }}>
+
             {panel === 'agents' && <MobileAgentEditor agentTypes={agentTypes} setAgentTypes={setAgentTypes} />}
+
+            {panel === 'templates' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {TEMPLATES.map(t => (
+                  <button key={t.id} onClick={() => applyTemplate(t)} style={{
+                    display: 'flex', flexDirection: 'column', padding: '12px 14px',
+                    background: '#0f1117', border: '1px solid #2d3148', borderRadius: 8,
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#2d3148'}
+                  >
+                    <div style={{ fontSize: 14, color: '#e2e8f0' }}>{t.icon} {t.name}</div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>{t.description}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {panel === 'settings' && (
               <>
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Agents: {agentCount}</div>
-                  <input type="range" min={5} max={500} step={5} value={agentCount} onChange={e => setAgentCount(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
+                  <input type="range" min={5} max={500} step={5} value={agentCount}
+                    onChange={e => setAgentCount(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#6366f1' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569' }}><span>5</span><span>500</span></div>
                 </div>
-                <div>
+                <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sim Speed</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {SPEED_OPTIONS.map(opt => (
@@ -218,6 +302,13 @@ export default function MobileLayout({
                     ))}
                   </div>
                 </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Zoom: {Math.round(zoom * 100)}%</div>
+                  <input type="range" min={0.5} max={2} step={0.1} value={zoom}
+                    onChange={e => setZoom(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#6366f1' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569' }}><span>50%</span><span>200%</span></div>
+                </div>
               </>
             )}
           </div>
@@ -227,35 +318,59 @@ export default function MobileLayout({
       {/* Bottom toolbar */}
       {!isSimulating && !isDone && (
         <div style={{ background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
+          {/* Tools row */}
           <div style={{ display: 'flex', padding: '6px 8px', gap: 4, overflowX: 'auto' }}>
             {TOOLS.map(tool => (
               <button key={tool.id} onClick={() => setActiveTool(tool.id)} style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
-                padding: '6px 10px', borderRadius: 8, border: '1px solid',
+                padding: '6px 8px', borderRadius: 8, border: '1px solid',
                 borderColor: activeTool === tool.id ? '#6366f1' : 'transparent',
                 background: activeTool === tool.id ? '#3730a3' : 'transparent',
                 color: activeTool === tool.id ? 'white' : '#94a3b8',
-                fontSize: 20, cursor: 'pointer', flexShrink: 0, minWidth: 52,
+                fontSize: 18, cursor: 'pointer', flexShrink: 0, minWidth: 46,
               }}>
                 {tool.icon}
                 <span style={{ fontSize: 9, marginTop: 2 }}>{tool.label}</span>
               </button>
             ))}
+
+            {/* Undo / Redo */}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
+              <button onClick={undo} disabled={undoStack.length === 0} style={{
+                padding: '6px 10px', borderRadius: 8, border: '1px solid #2d3148',
+                background: 'transparent', color: undoStack.length === 0 ? '#2d3148' : '#94a3b8',
+                fontSize: 16, cursor: undoStack.length === 0 ? 'default' : 'pointer',
+              }}>↩</button>
+              <button onClick={redo} disabled={redoStack.length === 0} style={{
+                padding: '6px 10px', borderRadius: 8, border: '1px solid #2d3148',
+                background: 'transparent', color: redoStack.length === 0 ? '#2d3148' : '#94a3b8',
+                fontSize: 16, cursor: redoStack.length === 0 ? 'default' : 'pointer',
+              }}>↪</button>
+            </div>
           </div>
+
+          {/* Action buttons row */}
           <div style={{ display: 'flex', gap: 6, padding: '0 8px 8px' }}>
+            <button onClick={() => togglePanel('templates')} style={{
+              flex: 1, padding: '8px', borderRadius: 8, border: '1px solid',
+              borderColor: panel === 'templates' ? '#6366f1' : '#3d4266',
+              background: panel === 'templates' ? '#3730a3' : '#2d3148',
+              color: panel === 'templates' ? 'white' : '#e2e8f0',
+              fontSize: 12, cursor: 'pointer', fontWeight: 500,
+            }}>📐 Templates</button>
             <button onClick={() => togglePanel('agents')} style={{
               flex: 1, padding: '8px', borderRadius: 8, border: '1px solid',
               borderColor: panel === 'agents' ? '#6366f1' : '#3d4266',
               background: panel === 'agents' ? '#3730a3' : '#2d3148',
               color: panel === 'agents' ? 'white' : '#e2e8f0',
-              fontSize: 13, cursor: 'pointer', fontWeight: 500,
-            }}>🧑 Agent Types</button>
+              fontSize: 12, cursor: 'pointer', fontWeight: 500,
+            }}>🧑 Agents</button>
             <button onClick={() => togglePanel('settings')} style={{
               flex: 1, padding: '8px', borderRadius: 8, border: '1px solid',
               borderColor: panel === 'settings' ? '#6366f1' : '#3d4266',
               background: panel === 'settings' ? '#3730a3' : '#2d3148',
               color: panel === 'settings' ? 'white' : '#e2e8f0',
-              fontSize: 13, cursor: 'pointer', fontWeight: 500,
+              fontSize: 12, cursor: 'pointer', fontWeight: 500,
             }}>⚙ Settings</button>
           </div>
         </div>
