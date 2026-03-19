@@ -23,31 +23,14 @@ class SimulationEngine:
                 agent_type="customer",
                 panic=self.panic,
             )
-            agent.waypoints = self._build_waypoints(pos, dest)
-            agent.current_waypoint_idx = 0
             self.agents.append(agent)
-
-    def _build_waypoints(self, start, destination):
-        """
-        Waypoints: navigate through each door center in order, then reach exit.
-        """
-        waypoints = []
-        if self.env.doors:
-            doors_sorted = sorted(self.env.doors, key=lambda d: np.linalg.norm(np.array(start) - d.center))
-            for door in doors_sorted:
-                waypoints.append(('door', door.center.copy(), door))
-        waypoints.append(('exit', np.array(destination, dtype=float), None))
-        return waypoints
 
     def set_panic(self, panic: bool):
         self.panic = panic
         for agent in self.agents:
             if not agent.reached_destination:
                 agent.set_panic(panic)
-                new_dest = self.env.random_exit_position()
-                agent.destination = new_dest
-                agent.waypoints = self._build_waypoints(agent.position, new_dest)
-                agent.current_waypoint_idx = 0
+                agent.destination = self.env.random_exit_position()
 
     def _wall_force(self, agent):
         total = np.zeros(2)
@@ -83,50 +66,56 @@ class SimulationEngine:
             total += force_mag * (diff / dist)
         return total
 
-    def _get_current_target(self, agent):
-        idx = getattr(agent, 'current_waypoint_idx', 0)
-        waypoints = getattr(agent, 'waypoints', [])
-        if not waypoints or idx >= len(waypoints):
-            return agent.destination
-        _, target_pos, _ = waypoints[idx]
-        return target_pos
-
-    def _advance_waypoint(self, agent):
-        waypoints = getattr(agent, 'waypoints', [])
-        idx = getattr(agent, 'current_waypoint_idx', 0)
-        if not waypoints or idx >= len(waypoints):
-            return
-        wtype, target_pos, door_obj = waypoints[idx]
-        dist = np.linalg.norm(agent.position - target_pos)
-        threshold = 0.8 if wtype == 'door' else 0.5
-        if dist < threshold:
-            if wtype == 'door' and door_obj is not None:
-                # Pass actual delay from door object
-                print(f"[door] agent {agent.id} entering door with delay={door_obj.delay}s")
-                agent.enter_door(door_obj.delay)
-            agent.current_waypoint_idx = idx + 1
-
     def _desired_force(self, agent):
-        target = self._get_current_target(agent)
-        direction = target - agent.position
+        direction = agent.destination - agent.position
         dist = np.linalg.norm(direction)
         if dist < 0.01:
             return np.zeros(2)
         desired_velocity = (direction / dist) * agent.desired_speed
         return agent.mass * (desired_velocity - agent.velocity) / 0.5
 
+    def _check_door_zones(self, agent):
+        """
+        Check if agent is physically inside any door zone.
+        Triggers delay for any agent passing through — regardless of approach angle.
+        Uses a cooldown so the same door doesn't re-trigger immediately.
+        """
+        if agent.in_door:
+            return  # already waiting
+
+        if not hasattr(agent, '_door_cooldown'):
+            agent._door_cooldown = {}
+
+        for door in self.env.doors:
+            door_id = id(door)
+            # Cooldown: don't re-trigger same door for 5 seconds after passing through
+            cooldown_until = agent._door_cooldown.get(door_id, 0)
+            if self.time < cooldown_until:
+                continue
+
+            if door.agent_is_in_door(agent.position, threshold=0.5):
+                if door.delay > 0:
+                    agent.enter_door(door.delay)
+                    # Set cooldown so agent doesn't re-trigger on the way out
+                    agent._door_cooldown[door_id] = self.time + door.delay + 1.0
+                else:
+                    # 0 delay — just set cooldown so we don't keep checking
+                    agent._door_cooldown[door_id] = self.time + 2.0
+                break
+
     def step(self):
         active = [a for a in self.agents if not a.reached_destination]
+
         for agent in active:
-            # Skip waypoint advance if currently waiting in door
-            if not agent.in_door:
-                self._advance_waypoint(agent)
+            # Check if agent is in a door zone
+            self._check_door_zones(agent)
 
             f_desired = self._desired_force(agent)
             f_wall = self._wall_force(agent)
             f_agent = self._agent_force(agent, active)
 
             if agent.in_door:
+                # Near-stop during door delay
                 total_force = f_desired * 0.05 + f_wall * 0.3
             else:
                 total_force = f_desired + f_wall + f_agent
@@ -136,9 +125,6 @@ class SimulationEngine:
             r = agent.radius
             agent.position[0] = np.clip(agent.position[0], r, self.env.width - r)
             agent.position[1] = np.clip(agent.position[1], r, self.env.height - r)
-
-            if np.linalg.norm(agent.position - agent.destination) < 0.5:
-                agent.reached_destination = True
 
         self.time += self.dt
 
