@@ -1,270 +1,387 @@
-import { useState } from 'react'
+import { useState, useCallback, useRef, useEffect } from "react"
+import FloorPlanEditor from "./components/FloorPlanEditor"
+import SimulationView from "./components/SimulationView"
+import Toolbar from "./components/Toolbar"
+import ControlPanel from "./components/ControlPanel"
+import ResultsPanel from "./components/ResultsPanel"
+import AuthModal from "./components/AuthModal"
+import SavedPlans from "./components/SavedPlans"
+import ShareButton from "./components/ShareButton"
+import PricingModal from "./components/PricingModal"
+import MobileLayout from "./components/MobileLayout"
+import { DEFAULT_PRESETS } from "./components/AgentTypeEditor"
+import { TEMPLATES } from "./utils/templates"
+import { supabase } from "./utils/supabase"
+import { generatePDFReport } from "./utils/pdfReport"
+import { usePlaybackRecorder } from "./utils/usePlaybackRecorder"
+import { useSubscription } from "./utils/useSubscription"
+import "./App.css"
 
-const TOOLS = [
-  { id: "wall", icon: "📏", label: "Wall" },
-  { id: "door", icon: "🚪", label: "Door" },
-  { id: "obstacle", icon: "⬛", label: "Table" },
-  { id: "spawn", icon: "🟢", label: "Spawn" },
-  { id: "exit", icon: "🔴", label: "Exit" },
-  { id: "erase", icon: "🗑", label: "Erase" },
-]
+const DEFAULT_FLOOR_PLAN = TEMPLATES[0].floorPlan
+const WS_URL = import.meta.env.VITE_WS_URL || "wss://ghostcrowd-production.up.railway.app"
 
-export default function MobileLayout({
-  children, // canvas
-  activeTool, setActiveTool,
-  floorPlan, agentCount, setAgentCount,
-  isSimulating, isDone,
-  onStart, onStop, onReset,
-  currentFrame,
-  user, onSignIn, onSignOut,
-  onSave, saveStatus,
-  onShare,
-  onUpgrade, tier,
-  onExport, onExportPDF,
-  heatMap, showHeatMap, setShowHeatMap,
-  bottlenecks, showBottlenecks, setShowBottlenecks,
-  panicMode, onTriggerPanic, onCalmDown,
-  simSpeed, setSimSpeed,
-  results,
-  playbackBar, // optional playback controls
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
+function getUpgradeStatus() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('upgrade')
+}
 
-  const SPEED_OPTIONS = [
-    { label: '0.5×', value: 0.5 },
-    { label: '1×', value: 1.0 },
-    { label: '2×', value: 2.0 },
-    { label: '4×', value: 4.0 },
-  ]
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
 
+export default function App() {
+  const isMobile = useIsMobile()
+
+  const [activeTool, setActiveTool] = useState("wall")
+  const [floorPlan, setFloorPlan] = useState(DEFAULT_FLOOR_PLAN)
+  const [floorPlanName, setFloorPlanName] = useState("Untitled")
+  const [agentCount, setAgentCount] = useState(50)
+  const [simulationState, setSimulationState] = useState(null)
+  const [currentFrame, setCurrentFrame] = useState(null)
+  const [results, setResults] = useState(null)
+  const [heatMap, setHeatMap] = useState(null)
+  const [bottlenecks, setBottlenecks] = useState(null)
+  const [showHeatMap, setShowHeatMap] = useState(false)
+  const [showBottlenecks, setShowBottlenecks] = useState(true)
+  const [backgroundImage, setBackgroundImage] = useState(null)
+  const [undoStack, setUndoStack] = useState([])
+  const [redoStack, setRedoStack] = useState([])
+  const [simSpeed, setSimSpeed] = useState(1.0)
+  const [spawnMode, setSpawnMode] = useState('instant')
+  const [spawnSchedule, setSpawnSchedule] = useState([])
+  const [agentTypes, setAgentTypes] = useState(DEFAULT_PRESETS)
+  const [panicMode, setPanicMode] = useState(false)
+
+  const wsRef = useRef(null)
+
+  const [user, setUser] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showSavedPlans, setShowSavedPlans] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null)
+  const [upgradeStatus, setUpgradeStatus] = useState(getUpgradeStatus())
+
+  const { tier, limits, canUse } = useSubscription(user)
+
+  const {
+    playback, playbackFrame, playbackProgress,
+    hasRecording, startRecording, recordFrame, stopRecording,
+    startPlayback, stopPlayback, seekPlayback, frameCount,
+  } = usePlaybackRecorder()
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (upgradeStatus) {
+      window.history.replaceState({}, '', '/app')
+      setTimeout(() => setUpgradeStatus(null), 4000)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.target.tagName === 'INPUT') return
+      const isSim = simulationState === "running"
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isSim) {
+        e.preventDefault()
+        if (undoStack.length === 0) return
+        const prev = undoStack[undoStack.length - 1]
+        setRedoStack(s => [...s, floorPlan]); setUndoStack(s => s.slice(0, -1)); setFloorPlan(prev)
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z')) && !isSim) {
+        e.preventDefault()
+        if (redoStack.length === 0) return
+        const next = redoStack[redoStack.length - 1]
+        setUndoStack(s => [...s, floorPlan]); setRedoStack(s => s.slice(0, -1)); setFloorPlan(next)
+      }
+      if (!isSim) {
+        if (e.key === 'w' || e.key === 'W') setActiveTool('wall')
+        if (e.key === 'd' || e.key === 'D') setActiveTool('door')
+        if (e.key === 'r' || e.key === 'R') setActiveTool('obstacle')
+        if (e.key === 's' || e.key === 'S') setActiveTool('select')
+        if (e.key === 'e' || e.key === 'E') setActiveTool('erase')
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [undoStack, redoStack, floorPlan, simulationState])
+
+  const handleSpeedChange = useCallback((newSpeed) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "speed", sim_speed: newSpeed }))
+    }
+  }, [])
+
+  const handleTriggerPanic = useCallback(() => {
+    setPanicMode(true)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "panic" }))
+    }
+  }, [])
+
+  const handleCalmDown = useCallback(() => {
+    setPanicMode(false)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "calm" }))
+    }
+  }, [])
+
+  const startSimulation = useCallback(() => {
+    const cappedAgents = Math.min(agentCount, limits.agents)
+    if (wsRef.current) wsRef.current.close()
+    setCurrentFrame(null); setResults(null); setHeatMap(null)
+    setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
+    setSimulationState("running")
+    startRecording()
+
+    const ws = new WebSocket(`${WS_URL}/simulate`)
+    wsRef.current = ws
+
+    ws.onopen = () => ws.send(JSON.stringify({
+      agent_count: cappedAgents, floor_plan: floorPlan,
+      dt: 0.05, steps_per_frame: 3, max_steps: 3000,
+      sim_speed: simSpeed,
+      spawn_schedule: spawnMode === 'gradual' && spawnSchedule.length > 0 ? spawnSchedule : null,
+      panic_mode: false, custom_agent_types: agentTypes,
+    }))
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.type === "frame") {
+        setCurrentFrame(msg); recordFrame(msg)
+        if (msg.panic !== undefined) setPanicMode(msg.panic)
+      } else if (msg.type === "done") {
+        setResults(msg.summary); setHeatMap(msg.heat_map)
+        setBottlenecks(msg.bottlenecks); setSimulationState("done"); stopRecording()
+      } else if (msg.type === "error") {
+        console.error("Simulation error:", msg.message); setSimulationState(null); stopRecording()
+      }
+    }
+
+    ws.onerror = () => { setSimulationState(null); stopRecording() }
+    ws.onclose = () => {}
+  }, [floorPlan, agentCount, limits, simSpeed, spawnMode, spawnSchedule, agentTypes, startRecording, recordFrame, stopRecording])
+
+  const stopSimulation = useCallback(() => {
+    if (wsRef.current) {
+      try { wsRef.current.send(JSON.stringify({ type: "cancel" })) } catch {}
+      wsRef.current.close()
+    }
+    setSimulationState(null); setPanicMode(false); stopRecording()
+  }, [stopRecording])
+
+  const resetAll = useCallback(() => {
+    if (wsRef.current) wsRef.current.close()
+    stopPlayback()
+    setSimulationState(null); setCurrentFrame(null); setResults(null)
+    setHeatMap(null); setBottlenecks(null); setShowHeatMap(false); setPanicMode(false)
+  }, [stopPlayback])
+
+  const exportHeatMap = useCallback(() => {
+    const canvas = document.querySelector("canvas")
+    if (!canvas) return
+    const link = document.createElement("a")
+    link.download = `ghostcrowd-${floorPlanName.toLowerCase().replace(/\s+/g, '-')}.png`
+    link.href = canvas.toDataURL("image/png"); link.click()
+  }, [floorPlanName])
+
+  const exportPDF = useCallback(async () => {
+    if (!canUse('pdf')) { setShowPricing(true); return }
+    const canvas = document.querySelector("canvas")
+    await generatePDFReport({ floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canvasElement: canvas })
+  }, [floorPlanName, results, bottlenecks, agentTypes, agentCount, floorPlan, canUse])
+
+  const saveFloorPlan = useCallback(async () => {
+    if (!user) { setShowAuthModal(true); return }
+    setSaveStatus('saving')
+    const existing = await supabase.from('floor_plans').select('id').eq('user_id', user.id).eq('name', floorPlanName).single()
+    let error
+    if (existing.data) {
+      const res = await supabase.from('floor_plans').update({ data: floorPlan, updated_at: new Date().toISOString() }).eq('id', existing.data.id)
+      error = res.error
+    } else {
+      const res = await supabase.from('floor_plans').insert({ user_id: user.id, name: floorPlanName, data: floorPlan })
+      error = res.error
+    }
+    setSaveStatus(error ? 'error' : 'saved')
+    setTimeout(() => setSaveStatus(null), 2000)
+  }, [user, floorPlan, floorPlanName])
+
+  const signOut = async () => { await supabase.auth.signOut(); setUser(null) }
+
+  const isSimulating = simulationState === "running"
+  const isDone = simulationState === "done"
+  const activeFrame = playback ? playbackFrame : currentFrame
+
+  const canvas = isSimulating || isDone ? (
+    <SimulationView
+      floorPlan={floorPlan} frame={activeFrame}
+      heatMap={showHeatMap ? heatMap : null}
+      bottlenecks={showBottlenecks && isDone ? bottlenecks : null}
+      isDone={isDone && !playback} agentTypes={agentTypes}
+    />
+  ) : (
+    <FloorPlanEditor
+      floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+      activeTool={activeTool} setActiveTool={setActiveTool}
+      undoStack={undoStack} setUndoStack={setUndoStack}
+      redoStack={redoStack} setRedoStack={setRedoStack}
+      backgroundImage={backgroundImage}
+    />
+  )
+
+  const playbackBar = isDone && hasRecording ? (
+    <div style={{
+      background: '#1a1d2e', borderTop: '1px solid #2d3148',
+      padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+    }}>
+      {!playback ? (
+        <button onClick={() => startPlayback(simSpeed)} style={{
+          padding: '5px 12px', background: '#3730a3', border: '1px solid #6366f1',
+          borderRadius: 6, color: 'white', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>▶ Replay</button>
+      ) : (
+        <button onClick={stopPlayback} style={{
+          padding: '5px 12px', background: '#1e2235', border: '1px solid #2d3148',
+          borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>⏹ Stop</button>
+      )}
+      <input type="range" min={0} max={100} value={playbackProgress}
+        onChange={e => seekPlayback(Number(e.target.value))}
+        style={{ flex: 1, accentColor: '#6366f1' }} />
+      <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{frameCount}f</span>
+    </div>
+  ) : null
+
+  const sharedProps = {
+    activeTool, setActiveTool,
+    floorPlan, agentCount, setAgentCount,
+    isSimulating, isDone,
+    onStart: startSimulation, onStop: stopSimulation, onReset: resetAll,
+    currentFrame: activeFrame,
+    user, onSignIn: () => setShowAuthModal(true), onSignOut: signOut,
+    onSave: saveFloorPlan, saveStatus,
+    onShare: () => {},
+    onUpgrade: () => setShowPricing(true), tier,
+    onExport: exportHeatMap, onExportPDF: exportPDF,
+    heatMap, showHeatMap, setShowHeatMap,
+    bottlenecks, showBottlenecks, setShowBottlenecks,
+    panicMode, onTriggerPanic: handleTriggerPanic, onCalmDown: handleCalmDown,
+    simSpeed, setSimSpeed,
+    results,
+    playbackBar,
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileLayout {...sharedProps}>
+          {canvas}
+        </MobileLayout>
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
+        {showPricing && <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)} onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />}
+      </>
+    )
+  }
+
+  // ── Desktop layout ──
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f1117', overflow: 'hidden' }}>
-
-      {/* Top bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px', background: '#1a1d2e', borderBottom: '1px solid #2d3148',
-        flexShrink: 0, zIndex: 10,
-      }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#a78bfa' }}>👻 GhostCrowd</div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* Run/Stop button */}
-          {!isDone && !isSimulating && (
-            <button onClick={onStart} style={{
-              padding: '7px 16px', background: '#6366f1', border: 'none',
-              borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>▶ Run</button>
-          )}
-          {isSimulating && (
-            <button onClick={onStop} style={{
-              padding: '7px 16px', background: '#dc2626', border: 'none',
-              borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>⏹ Stop</button>
-          )}
-          {isDone && (
-            <button onClick={onReset} style={{
-              padding: '7px 16px', background: '#2d3148', border: '1px solid #3d4266',
-              borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer',
-            }}>↩ Edit</button>
-          )}
-
-          {/* Hamburger menu */}
-          <button onClick={() => setMenuOpen(v => !v)} style={{
-            width: 36, height: 36, background: '#2d3148', border: '1px solid #3d4266',
-            borderRadius: 8, color: '#e2e8f0', fontSize: 16, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>☰</button>
-        </div>
-      </div>
-
-      {/* Dropdown menu */}
-      {menuOpen && (
+    <div className="app">
+      {upgradeStatus === 'success' && (
         <div style={{
-          position: 'absolute', top: 56, right: 12, zIndex: 200,
-          background: '#1a1d2e', border: '1px solid #2d3148', borderRadius: 10,
-          padding: 8, minWidth: 180, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-        }}>
-          <button onClick={() => { onSave(); setMenuOpen(false) }} style={menuBtnStyle}>
-            💾 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
-          </button>
-          <button onClick={() => { onShare(); setMenuOpen(false) }} style={menuBtnStyle}>
-            🔗 Share
-          </button>
-          <button onClick={() => { onUpgrade(); setMenuOpen(false) }} style={menuBtnStyle}>
-            ⬆ {tier === 'free' ? 'Upgrade' : tier}
-          </button>
-          {isDone && heatMap && (
+          position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
+          borderRadius: 8, padding: '10px 20px', zIndex: 200, fontSize: 13, color: '#4ade80',
+        }}>🎉 Upgrade successful! Welcome to {tier}.</div>
+      )}
+
+      <header className="app-header">
+        <div className="logo">👻 GhostCrowd</div>
+        {!isSimulating && !isDone && (
+          <input className="plan-name-input" value={floorPlanName} onChange={e => setFloorPlanName(e.target.value)} placeholder="Untitled" />
+        )}
+        {(isSimulating || isDone) && <div className="plan-name-display">{floorPlanName}</div>}
+        <div className="header-actions">
+          {!isSimulating && (
             <>
-              <button onClick={() => { onExport(); setMenuOpen(false) }} style={menuBtnStyle}>⬇ Export PNG</button>
-              <button onClick={() => { onExportPDF(); setMenuOpen(false) }} style={menuBtnStyle}>📄 Export PDF</button>
+              <button className="header-btn" onClick={saveFloorPlan}>
+                {saveStatus === 'saving' ? '...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '✗ Error' : '💾 Save'}
+              </button>
+              <ShareButton user={user} floorPlan={floorPlan} floorPlanName={floorPlanName} onRequestAuth={() => setShowAuthModal(true)} />
+              {user && <button className="header-btn" onClick={() => setShowSavedPlans(true)}>📁 My Plans</button>}
             </>
           )}
-          <div style={{ height: 1, background: '#2d3148', margin: '4px 0' }} />
+          <button className="header-btn" onClick={() => setShowPricing(true)}
+            style={{ borderColor: tier !== 'free' ? 'rgba(99,102,241,0.5)' : '#2d3148', color: tier !== 'free' ? '#a5b4fc' : '#64748b' }}>
+            {tier === 'free' ? '⬆ Upgrade' : `✨ ${tier.charAt(0).toUpperCase() + tier.slice(1)}`}
+          </button>
           {user ? (
-            <button onClick={() => { onSignOut(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#f87171' }}>
-              Sign out
-            </button>
+            <button className="header-btn" onClick={signOut}>Sign out</button>
           ) : (
-            <button onClick={() => { onSignIn(); setMenuOpen(false) }} style={{ ...menuBtnStyle, color: '#a78bfa' }}>
-              Sign in
-            </button>
+            <button className="header-btn header-btn-accent" onClick={() => setShowAuthModal(true)}>Sign in</button>
           )}
         </div>
-      )}
+      </header>
 
-      {/* Canvas area */}
-      <div style={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: 0 }}
-        onClick={() => { setMenuOpen(false) }}
-      >
-        {children}
+      <div className="app-body">
+        <aside className="sidebar-left">
+          <Toolbar
+            activeTool={activeTool} setActiveTool={setActiveTool}
+            disabled={isSimulating} floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+            undoStack={undoStack} setUndoStack={setUndoStack}
+            redoStack={redoStack} setRedoStack={setRedoStack}
+            backgroundImage={backgroundImage} setBackgroundImage={setBackgroundImage}
+            agentTypes={agentTypes} setAgentTypes={setAgentTypes}
+          />
+        </aside>
+
+        <main className="canvas-area" style={{ flexDirection: 'column', gap: 0 }}>
+          {canvas}
+          {playbackBar}
+        </main>
+
+        <aside className="sidebar-right">
+          <ControlPanel
+            agentCount={agentCount} setAgentCount={setAgentCount}
+            isSimulating={isSimulating} isDone={isDone}
+            onStart={startSimulation} onStop={stopSimulation}
+            onReset={resetAll} onExport={exportHeatMap} onExportPDF={exportPDF}
+            currentFrame={activeFrame}
+            showHeatMap={showHeatMap} setShowHeatMap={setShowHeatMap}
+            showBottlenecks={showBottlenecks} setShowBottlenecks={setShowBottlenecks}
+            heatMap={heatMap} bottlenecks={bottlenecks}
+            simSpeed={simSpeed} setSimSpeed={setSimSpeed}
+            spawnMode={spawnMode} setSpawnMode={setSpawnMode}
+            spawnSchedule={spawnSchedule} setSpawnSchedule={setSpawnSchedule}
+            floorPlan={floorPlan} setFloorPlan={setFloorPlan}
+            onSpeedChange={handleSpeedChange}
+            panicMode={panicMode} onTriggerPanic={handleTriggerPanic} onCalmDown={handleCalmDown}
+            tier={tier} limits={limits} onUpgrade={() => setShowPricing(true)}
+          />
+          {isDone && results && <ResultsPanel results={results} />}
+        </aside>
       </div>
 
-      {/* Playback bar if present */}
-      {playbackBar}
-
-      {/* Live stats bar during simulation */}
-      {(isSimulating || isDone) && currentFrame && (
-        <div style={{
-          display: 'flex', gap: 16, padding: '6px 16px',
-          background: '#131729', borderTop: '1px solid #2d3148',
-          fontSize: 12, flexShrink: 0,
-        }}>
-          <span style={{ color: '#64748b' }}>t=<span style={{ color: '#a78bfa' }}>{currentFrame.time}s</span></span>
-          <span style={{ color: '#64748b' }}>Active: <span style={{ color: '#a78bfa' }}>{currentFrame.active_count}/{currentFrame.total_count}</span></span>
-          {currentFrame.panic && <span style={{ color: '#f87171' }}>🚨 PANIC</span>}
-        </div>
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={setUser} />}
+      {showSavedPlans && (
+        <SavedPlans user={user}
+          onLoad={(data, name) => { setFloorPlan(data); setFloorPlanName(name) }}
+          onClose={() => setShowSavedPlans(false)} />
       )}
-
-      {/* Results bar */}
-      {isDone && results && (
-        <div style={{
-          display: 'flex', gap: 16, padding: '8px 16px',
-          background: '#131729', borderTop: '1px solid #2d3148',
-          fontSize: 12, flexShrink: 0, flexWrap: 'wrap',
-        }}>
-          <span style={{ color: results.exit_rate_pct >= 90 ? '#4ade80' : results.exit_rate_pct >= 60 ? '#fbbf24' : '#f87171' }}>
-            {results.exit_rate_pct}% exited
-          </span>
-          <span style={{ color: '#64748b' }}>Avg: <span style={{ color: '#e2e8f0' }}>{results.avg_speed} m/s</span></span>
-          <span style={{ color: '#64748b' }}>Bottlenecks: <span style={{ color: '#fbbf24' }}>{results.bottleneck_count}</span></span>
-        </div>
-      )}
-
-      {/* Overlays toggle row */}
-      {isDone && (heatMap || (bottlenecks?.length > 0)) && (
-        <div style={{
-          display: 'flex', gap: 10, padding: '6px 16px',
-          background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0,
-        }}>
-          {heatMap && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
-              <input type="checkbox" checked={showHeatMap} onChange={e => setShowHeatMap(e.target.checked)} />
-              Heat Map
-            </label>
-          )}
-          {bottlenecks?.length > 0 && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
-              <input type="checkbox" checked={showBottlenecks} onChange={e => setShowBottlenecks(e.target.checked)} />
-              Bottlenecks
-            </label>
-          )}
-        </div>
-      )}
-
-      {/* Bottom toolbar */}
-      {!isSimulating && !isDone && (
-        <div style={{
-          display: 'flex', alignItems: 'center',
-          background: '#1a1d2e', borderTop: '1px solid #2d3148',
-          padding: '6px 8px', gap: 4, flexShrink: 0,
-          overflowX: 'auto',
-        }}>
-          {TOOLS.map(tool => (
-            <button key={tool.id} onClick={() => setActiveTool(tool.id)} style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              padding: '6px 10px', borderRadius: 8, border: '1px solid',
-              borderColor: activeTool === tool.id ? '#6366f1' : 'transparent',
-              background: activeTool === tool.id ? '#3730a3' : 'transparent',
-              color: activeTool === tool.id ? 'white' : '#94a3b8',
-              fontSize: 18, cursor: 'pointer', flexShrink: 0, minWidth: 48,
-            }}>
-              {tool.icon}
-              <span style={{ fontSize: 9, marginTop: 2 }}>{tool.label}</span>
-            </button>
-          ))}
-
-          {/* Settings panel toggle */}
-          <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
-            <button onClick={() => setPanelOpen(v => !v)} style={{
-              padding: '6px 12px', background: panelOpen ? '#3730a3' : '#2d3148',
-              border: '1px solid #3d4266', borderRadius: 8, color: '#e2e8f0',
-              fontSize: 12, cursor: 'pointer',
-            }}>⚙ Settings</button>
-          </div>
-        </div>
-      )}
-
-      {/* Panic button during sim */}
-      {isSimulating && (
-        <div style={{ padding: '8px 12px', background: '#1a1d2e', borderTop: '1px solid #2d3148', flexShrink: 0 }}>
-          {!panicMode ? (
-            <button onClick={onTriggerPanic} style={{
-              width: '100%', padding: '10px', background: '#dc2626', border: 'none',
-              borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>🚨 Trigger Panic / Evacuation</button>
-          ) : (
-            <button onClick={onCalmDown} style={{
-              width: '100%', padding: '10px', background: '#2d3148', border: '1px solid #3d4266',
-              borderRadius: 8, color: '#e2e8f0', fontSize: 13, cursor: 'pointer',
-            }}>🕊 Calm Down</button>
-          )}
-        </div>
-      )}
-
-      {/* Settings panel slide-up */}
-      {panelOpen && !isSimulating && !isDone && (
-        <div style={{
-          position: 'absolute', bottom: 60, left: 0, right: 0, zIndex: 100,
-          background: '#1a1d2e', borderTop: '1px solid #2d3148',
-          padding: 16, maxHeight: '50vh', overflowY: 'auto',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>Settings</span>
-            <button onClick={() => setPanelOpen(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16 }}>✕</button>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Agents: {agentCount}</div>
-            <input type="range" min={5} max={500} step={5} value={agentCount}
-              onChange={e => setAgentCount(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#6366f1' }} />
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sim Speed</div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {SPEED_OPTIONS.map(opt => (
-                <button key={opt.value} onClick={() => setSimSpeed(opt.value)} style={{
-                  flex: 1, padding: '7px', borderRadius: 6, border: '1px solid',
-                  borderColor: simSpeed === opt.value ? '#6366f1' : '#2d3148',
-                  background: simSpeed === opt.value ? '#3730a3' : 'transparent',
-                  color: simSpeed === opt.value ? 'white' : '#64748b',
-                  fontSize: 12, cursor: 'pointer',
-                }}>{opt.label}</button>
-              ))}
-            </div>
-          </div>
-        </div>
+      {showPricing && (
+        <PricingModal user={user} currentTier={tier} onClose={() => setShowPricing(false)}
+          onRequestAuth={() => { setShowPricing(false); setShowAuthModal(true) }} />
       )}
     </div>
   )
-}
-
-const menuBtnStyle = {
-  display: 'block', width: '100%', padding: '10px 14px',
-  background: 'transparent', border: 'none', borderRadius: 6,
-  color: '#e2e8f0', fontSize: 13, cursor: 'pointer', textAlign: 'left',
-  transition: 'background 0.1s',
 }
